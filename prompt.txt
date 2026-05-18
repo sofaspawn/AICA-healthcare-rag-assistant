@@ -1,0 +1,461 @@
+You are an autonomous senior AI engineer responsible for fully implementing Phase 1A of a healthcare AI RAG assistant system.
+
+Your goal is to independently build the backend infrastructure for a medical document ingestion + retrieval system using FastAPI, ChromaDB, LangChain, and a free LLM API.
+
+The system should be production-structured, modular, and GitHub-ready.
+
+==================================================
+PROJECT GOAL
+============
+
+Build a healthcare AI backend MVP capable of:
+
+1. Loading and processing medical datasets
+2. Creating embeddings from medical content
+3. Storing vectors in ChromaDB
+4. Retrieving medically relevant context
+5. Generating grounded responses using an LLM
+6. Detecting SOS/emergency symptoms
+7. Exposing APIs through FastAPI
+8. Running locally as a CLI/API backend
+
+DO NOT BUILD:
+
+* frontend
+* authentication
+* dashboards
+* GraphRAG
+* ML deterioration prediction
+* cloud deployment
+* Docker/Kubernetes
+* fine-tuning
+
+This is ONLY Phase 1A.
+
+==================================================
+TECH STACK
+==========
+
+Backend:
+
+* Python 3.11+
+* FastAPI
+* Uvicorn
+
+RAG:
+
+* LangChain
+* ChromaDB
+
+LLM:
+
+* OpenRouter API
+* Default model:
+  deepseek/deepseek-chat-v3-0324:free
+
+Embeddings:
+
+* sentence-transformers/all-MiniLM-L6-v2
+* local embeddings preferred to avoid API costs
+
+Dataset:
+https://huggingface.co/datasets/GuyDor007/medisimplifier-dataset
+
+Utilities:
+
+* python-dotenv
+* pydantic
+* tqdm
+
+==================================================
+PROJECT STRUCTURE
+=================
+
+Create the following structure:
+
+healthcare-rag-assistant/
+│
+├── backend/
+│   ├── api/
+│   ├── rag/
+│   ├── ingestion/
+│   ├── rules/
+│   ├── models/
+│   ├── db/
+│   ├── utils/
+│   ├── data/
+│   ├── main.py
+│   └── requirements.txt
+│
+├── README.md
+├── .gitignore
+├── .env.example
+└── setup.sh
+
+==================================================
+IMPLEMENTATION REQUIREMENTS
+===========================
+
+====================
+STEP 1 — ENV SETUP
+==================
+
+Generate:
+
+* requirements.txt
+* setup.sh
+* .env.example
+
+requirements.txt should include:
+
+* fastapi
+* uvicorn
+* langchain
+* langchain-community
+* chromadb
+* sentence-transformers
+* datasets
+* python-dotenv
+* openai
+* pydantic
+* tqdm
+
+setup.sh should:
+
+* create venv
+* activate venv
+* install requirements
+
+==================================================
+STEP 2 — DATASET INGESTION
+==========================
+
+Download dataset using HuggingFace datasets library:
+
+Dataset:
+GuyDor007/medisimplifier-dataset
+
+Create:
+backend/ingestion/download_dataset.py
+
+This script should:
+
+* download dataset
+* cache locally
+* inspect schema
+* export usable JSON files
+
+Store processed data under:
+backend/data/
+
+==================================================
+STEP 3 — DATA NORMALIZATION
+===========================
+
+Create preprocessing pipeline.
+
+Convert dataset entries into standardized medical records:
+
+{
+"id": "...",
+"input": "...",
+"output": "...",
+"category": "...",
+"metadata": {...}
+}
+
+Implement:
+backend/ingestion/preprocess.py
+
+Requirements:
+
+* clean whitespace
+* remove malformed records
+* validate empty fields
+* generate UUIDs
+
+==================================================
+STEP 4 — CHUNKING PIPELINE
+==========================
+
+Create:
+backend/rag/chunker.py
+
+Use RecursiveCharacterTextSplitter.
+
+Chunk settings:
+
+* chunk_size = 500
+* chunk_overlap = 100
+
+Chunks should preserve semantic meaning.
+
+==================================================
+STEP 5 — EMBEDDING PIPELINE
+===========================
+
+Create:
+backend/rag/embeddings.py
+
+Requirements:
+
+* use sentence-transformers
+* model:
+  all-MiniLM-L6-v2
+
+Generate embeddings locally.
+
+Do NOT use paid embedding APIs.
+
+==================================================
+STEP 6 — VECTOR DATABASE
+========================
+
+Create:
+backend/rag/vector_store.py
+
+Use:
+
+* ChromaDB local persistence
+
+Requirements:
+
+* persist vectors locally
+* metadata support
+* retrieval support
+* collection creation
+
+Store:
+
+* chunk text
+* metadata
+* embeddings
+
+Persist DB inside:
+backend/db/
+
+==================================================
+STEP 7 — RETRIEVAL ENGINE
+=========================
+
+Create:
+backend/rag/retriever.py
+
+Requirements:
+
+* semantic similarity search
+* top-k retrieval
+* configurable k
+* return metadata + chunks
+
+==================================================
+STEP 8 — LLM RESPONSE GENERATION
+================================
+
+Create:
+backend/rag/chat.py
+
+Requirements:
+
+* use OpenRouter API
+* use environment variable:
+  OPENROUTER_API_KEY
+
+Model:
+deepseek/deepseek-chat-v3-0324:free
+
+Prompting behavior:
+
+* medically cautious
+* grounded in retrieved context
+* never hallucinate diagnoses
+* encourage physician consultation
+* explain reasoning simply
+
+The response pipeline:
+
+1. retrieve relevant chunks
+2. build context
+3. construct prompt
+4. query LLM
+5. return grounded response
+
+==================================================
+STEP 9 — SOS DETECTION ENGINE
+=============================
+
+Create:
+backend/rules/sos_rules.py
+
+Implement rule-based emergency detection.
+
+Default SOS symptoms:
+
+* chest pain
+* seizure
+* fainting
+* stroke symptoms
+* breathing difficulty
+* severe bleeding
+* loss of consciousness
+
+Requirements:
+
+* keyword matching
+* extensible rules
+* confidence scoring
+* emergency escalation flag
+
+Output format:
+
+{
+"is_sos": true,
+"matched_rules": [...],
+"severity": "high"
+}
+
+==================================================
+STEP 10 — FASTAPI BACKEND
+=========================
+
+Create:
+backend/main.py
+
+Required endpoints:
+
+GET /
+Health check
+
+POST /ingest
+Load and embed dataset
+
+POST /chat
+Body:
+{
+"query": "..."
+}
+
+Response:
+{
+"response": "...",
+"retrieved_context": [...],
+"sos_detected": true/false
+}
+
+POST /search
+Semantic retrieval endpoint
+
+==================================================
+STEP 11 — CLI TESTING SUPPORT
+=============================
+
+Create:
+backend/test_chat.py
+
+Requirements:
+
+* terminal chat loop
+* interactive querying
+* retrieval debugging
+* SOS alerts in terminal
+
+Example:
+
+User:
+"I have chest pain and dizziness"
+
+System:
+
+* retrieves context
+* checks SOS
+* generates response
+
+==================================================
+STEP 12 — README
+================
+
+Generate a professional README including:
+
+* project overview
+* architecture
+* setup instructions
+* API usage
+* example queries
+* screenshots placeholders
+* future roadmap
+
+Explain:
+
+* RAG pipeline
+* ChromaDB usage
+* SOS detection layer
+* dataset usage
+
+==================================================
+STEP 13 — GIT/GITHUB READINESS
+==============================
+
+Generate:
+.gitignore
+
+Ignore:
+
+* venv/
+* .env
+* **pycache**/
+* db/
+* .DS_Store
+
+Ensure project is immediately pushable to GitHub.
+
+==================================================
+CODING REQUIREMENTS
+===================
+
+* modular code
+* type hints where possible
+* clean architecture
+* docstrings
+* readable naming
+* logging support
+* avoid hardcoding
+* no placeholder TODOs
+* fully runnable locally
+
+==================================================
+EXECUTION REQUIREMENTS
+======================
+
+You must:
+
+* generate ALL files
+* generate COMPLETE code
+* ensure imports work
+* ensure folder structure works
+* ensure FastAPI app runs successfully
+* ensure vector DB persists
+* ensure retrieval works
+* ensure chat endpoint works
+
+At completion:
+
+* provide exact terminal commands to run
+* provide setup sequence
+* provide testing sequence
+
+==================================================
+FINAL DELIVERABLE
+=================
+
+A fully working local healthcare RAG backend MVP that:
+
+* ingests medical dataset
+* creates embeddings
+* stores vectors
+* retrieves medical context
+* chats using grounded retrieval
+* detects SOS symptoms
+* exposes REST APIs
+* runs locally
+
+The project should be internship-demo ready.
