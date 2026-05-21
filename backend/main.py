@@ -1,7 +1,13 @@
 import os
 import json
-from fastapi import FastAPI, HTTPException
+import uuid
+import io
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from PyPDF2 import PdfReader
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -16,15 +22,33 @@ from backend.rules.sos_rules import check_sos
 
 app = FastAPI(title="Healthcare RAG Assistant API")
 
+# Allow CORS for local dev
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 class ChatRequest(BaseModel):
     query: str
     
 class SearchRequest(BaseModel):
     query: str
 
-@app.get("/")
+@app.get("/health")
 def health_check():
     return {"status": "ok", "message": "Healthcare RAG Assistant is running."}
+
+# Mount static files
+frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+os.makedirs(frontend_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+
+@app.get("/")
+def serve_frontend():
+    return FileResponse(os.path.join(frontend_dir, "index.html"))
 
 @app.post("/ingest")
 def ingest_dataset():
@@ -46,6 +70,51 @@ def ingest_dataset():
         store.add_documents(documents)
         
         return {"status": "success", "message": f"Successfully ingested {len(documents)} records."}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/upload")
+async def upload_document(file: UploadFile = File(...)):
+    """
+    Accepts PDF or TXT files, extracts text, chunks it, and adds to vector store.
+    """
+    try:
+        content = await file.read()
+        text = ""
+        
+        if file.filename.endswith(".pdf"):
+            pdf = PdfReader(io.BytesIO(content))
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+        elif file.filename.endswith(".txt"):
+            text = content.decode("utf-8")
+        else:
+            raise HTTPException(status_code=400, detail="Only .pdf and .txt files are supported.")
+            
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="Could not extract text from file.")
+            
+        # Format as document
+        doc_id = str(uuid.uuid4())
+        document = {
+            "id": doc_id,
+            "input": f"Content from uploaded file: {file.filename}",
+            "output": text.strip(),
+            "category": "user_upload",
+            "metadata": {
+                "source": file.filename,
+                "original_id": doc_id
+            }
+        }
+        
+        # Add to vector store
+        store = get_vector_store()
+        store.add_documents([document])
+        
+        return {"status": "success", "message": f"Successfully processed and embedded {file.filename}."}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
