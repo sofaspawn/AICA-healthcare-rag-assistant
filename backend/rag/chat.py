@@ -2,18 +2,19 @@ import os
 from openai import OpenAI
 from backend.rag.retriever import retrieve_context
 
+# Ollama exposes an OpenAI-compatible API at localhost:11434/v1
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+
 def generate_chat_response(query: str, context_string: str) -> str:
     """
-    Generates a response using the OpenRouter API based on the provided context.
+    Generates a response using a local Ollama model via the OpenAI-compatible API.
     """
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        raise ValueError("OPENROUTER_API_KEY environment variable is not set.")
-        
     client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
+        base_url=OLLAMA_BASE_URL,
+        api_key="ollama",  # Ollama doesn't need a real key, but the client requires something
     )
+    model_name = OLLAMA_MODEL
     
     system_prompt = """You are a highly cautious and helpful AI medical assistant.
 Your goal is to answer the user's queries based SOLELY on the provided medical context.
@@ -34,7 +35,7 @@ CONTEXT:
     ]
     
     response = client.chat.completions.create(
-        model="deepseek/deepseek-chat-v3-0324:free",
+        model=model_name,
         messages=messages,
         temperature=0.1, # Low temperature for more grounded/factual responses
     )

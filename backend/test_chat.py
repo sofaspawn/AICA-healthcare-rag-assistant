@@ -31,7 +31,7 @@ def main():
         # Check SOS
         sos_result = check_sos(query)
         if sos_result["is_sos"]:
-            print("\n🚨 [EMERGENCY ALERT] 🚨")
+            print("\n [EMERGENCY ALERT] ")
             print(f"Detected critical symptoms: {', '.join(sos_result['matched_rules'])}")
             print("Please seek immediate medical attention or call emergency services!")
             print_separator()

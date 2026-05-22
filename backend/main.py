@@ -9,9 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PyPDF2 import PdfReader
 from dotenv import load_dotenv
+from pathlib import Path
 
-# Load environment variables
-load_dotenv()
+# Always load .env from the project root, regardless of where uvicorn is invoked
+_env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=_env_path)
 
 from backend.ingestion.download_dataset import download_and_export
 from backend.ingestion.preprocess import preprocess_data
@@ -31,6 +33,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Log API key presence on startup
+@app.on_event("startup")
+def log_api_key():
+    key = os.getenv("OPENROUTER_API_KEY")
+    if key:
+        print(" OPENROUTER_API_KEY loaded")
+    else:
+        print(" OPENROUTER_API_KEY missing")
+
 class ChatRequest(BaseModel):
     query: str
     
@@ -39,16 +50,32 @@ class SearchRequest(BaseModel):
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "message": "Healthcare RAG Assistant is running."}
+    api_key_set = bool(os.environ.get("OPENROUTER_API_KEY"))
+    return {
+        "status": "ok",
+        "message": "Healthcare RAG Assistant is running.",
+        "api_key_configured": api_key_set
+    }
+
+# Silence Chrome DevTools request
+@app.get("/.well-known/appspecific/com.chrome.devtools.json")
+def chrome_devtools():
+    return {}
 
 # Mount static files
-frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
-os.makedirs(frontend_dir, exist_ok=True)
-app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+
+if os.path.exists(frontend_dist):
+    assets_dir = os.path.join(frontend_dist, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 @app.get("/")
 def serve_frontend():
-    return FileResponse(os.path.join(frontend_dir, "index.html"))
+    index_path = os.path.join(frontend_dist, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"message": "Frontend build not found. Run npm run build in frontend directory."}
 
 @app.post("/ingest")
 def ingest_dataset():

@@ -1,0 +1,17 @@
+# Streamlit App Requirements
+# Minimal set for cloud deployment
+
+streamlit>=1.28.0
+langchain>=0.1.0
+langchain-community>=0.0.1
+chromadb>=0.3.21
+sentence-transformers>=2.2.0
+PyPDF2>=3.0.0
+python-dotenv>=1.0.0
+openai>=1.0.0
+datasets>=2.14.0
+requests>=2.31.0
+pydantic>=2.0.0
+
+# Optional for local LLM inference
+# ollama  # Install locally, not needed for cloud deployment
