@@ -19,9 +19,9 @@ A local and cloud-deployable AI-powered healthcare assistant built using Retriev
 2. **Backend (FastAPI):** Exposes endpoints (`/chat`, `/upload`, `/ingest`, `/search`).
 3. **Ingestion & Chunking:** Data is loaded (from HF or file uploads), normalized, and split.
 4. **Vector Storage & Retrieval:** ChromaDB stores vectors locally.
-5. **Chat Generation:** The retrieved context is passed alongside the user query to the OpenRouter LLM. A rule-based SOS engine runs concurrently to flag emergencies.
+5. **Chat Generation:** The retrieved context is passed alongside the user query to the Groq LLM. A rule-based SOS engine runs concurrently to flag emergencies.
 
-# Setup Instructions (Detailed)
+## Setup Instructions
 
 1. **Clone the repository**
    ```bash
@@ -29,20 +29,42 @@ A local and cloud-deployable AI-powered healthcare assistant built using Retriev
    cd AICA-healthcare-rag-assistant
    ```
 
-3. **Activate the virtual environment:**
+2. **Create and activate a virtual environment**
    ```bash
-   source venv/bin/activate
+   python3 -m venv venv
+   source venv/bin/activate   # macOS / Linux
+   # or: venv\Scripts\activate  # Windows
    ```
 
-4. **Configure Environment Variables:**
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   # For Streamlit-specific dependencies:
+   pip install -r requirements-streamlit.txt
+   ```
+
+4. **Configure your Groq API key**
    ```bash
    cp .env.example .env
-   # Edit .env and add your OpenRouter API Key
+   # Edit .env and add your Groq API Key:
+   # GROQ_API_KEY=your_groq_api_key_here
+   ```
+   Alternatively, export it directly in the shell:
+   ```bash
+   export GROQ_API_KEY=your_groq_api_key_here
    ```
 
-## Running the Application
+5. **Run the Streamlit application**
+   ```bash
+   ./run_streamlit.sh
+   # or directly:
+   streamlit run streamlit_app.py
+   ```
+   The app will be available at `http://localhost:8501` (or the port printed by Streamlit).
 
-You need to run both the backend and frontend simultaneously.
+## Running Backend and Frontend Separately
+
+If you prefer to start the FastAPI backend and the Streamlit frontend in separate terminals:
 
 **Start the Backend:**
 ```bash
@@ -51,7 +73,7 @@ uvicorn backend.main:app --reload
 
 **Start the Frontend (in a new terminal):**
 ```bash
-streamlit run frontend/app.py
+streamlit run streamlit_app.py
 ```
 
 ## Deployment Instructions
@@ -61,8 +83,8 @@ streamlit run frontend/app.py
 This project is compatible with HuggingFace Spaces (Streamlit environment).
 1. Create a new Space on HuggingFace and select "Streamlit" as the SDK.
 2. Upload the repository files to the Space.
-3. Configure the `OPENROUTER_API_KEY` in the Space's Settings -> Secrets.
-4. The space will automatically run `app.py` if placed at the root, or you can point it to `frontend/app.py`. Note: HF Spaces runs everything on a single instance, so you would need to run the FastAPI backend in a background thread or merge the logic. However, for a split architecture, Render is recommended.
+3. Configure the `GROQ_API_KEY` in the Space's Settings -> Secrets.
+4. The space will automatically run `app.py` if placed at the root, or you can point it to `streamlit_app.py`. Note: HF Spaces runs everything on a single instance, so you would need to run the FastAPI backend in a background thread or merge the logic. However, for a split architecture, Render is recommended.
 
 ### Render Deployment
 
@@ -70,5 +92,5 @@ The repository includes a `render.yaml` Blueprint for deploying both the backend
 1. Connect your GitHub repository to Render.
 2. Go to Blueprints -> New Blueprint Instance -> Select your repo.
 3. Render will detect the `render.yaml` and create two services: `healthcare-rag-backend` and `healthcare-rag-frontend`.
-4. Ensure you set the `OPENROUTER_API_KEY` environment variable in the Render Dashboard for the backend service.
+4. Ensure you set the `GROQ_API_KEY` environment variable in the Render Dashboard for the backend service.
 5. Update the `BACKEND_URL` environment variable for the frontend service to match your actual deployed backend URL once it's created.

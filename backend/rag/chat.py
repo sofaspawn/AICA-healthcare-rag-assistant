@@ -3,7 +3,10 @@ from openai import OpenAI
 from backend.rag.retriever import retrieve_context
 
 # Groq exposes an OpenAI-compatible API
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY environment variable is required but not set. "
+                     "Set it in your .env file or export it in the shell.")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 def generate_chat_response(query: str, context_string: str) -> str:
