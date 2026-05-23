@@ -21,18 +21,12 @@ A local and cloud-deployable AI-powered healthcare assistant built using Retriev
 4. **Vector Storage & Retrieval:** ChromaDB stores vectors locally.
 5. **Chat Generation:** The retrieved context is passed alongside the user query to the OpenRouter LLM. A rule-based SOS engine runs concurrently to flag emergencies.
 
-## Setup Instructions (Local)
+# Setup Instructions (Detailed)
 
-1. **Clone the repository:**
+1. **Clone the repository**
    ```bash
    git clone https://github.com/samridh-111/AICA-healthcare-rag-assistant.git
    cd AICA-healthcare-rag-assistant
-   ```
-
-2. **Run the setup script:**
-   ```bash
-   chmod +x setup.sh
-   ./setup.sh
    ```
 
 3. **Activate the virtual environment:**

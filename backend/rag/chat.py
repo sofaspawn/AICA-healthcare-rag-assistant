@@ -2,19 +2,19 @@ import os
 from openai import OpenAI
 from backend.rag.retriever import retrieve_context
 
-# Ollama exposes an OpenAI-compatible API at localhost:11434/v1
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+# Groq exposes an OpenAI-compatible API
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 def generate_chat_response(query: str, context_string: str) -> str:
     """
-    Generates a response using a local Ollama model via the OpenAI-compatible API.
+    Generates a response using Groq API via the OpenAI-compatible client.
     """
     client = OpenAI(
-        base_url=OLLAMA_BASE_URL,
-        api_key="ollama",  # Ollama doesn't need a real key, but the client requires something
+        base_url="https://api.groq.com/openai/v1",
+        api_key=GROQ_API_KEY,
     )
-    model_name = OLLAMA_MODEL
+    model_name = GROQ_MODEL
     
     system_prompt = """You are a highly cautious and helpful AI medical assistant.
 Your goal is to answer the user's queries based SOLELY on the provided medical context.

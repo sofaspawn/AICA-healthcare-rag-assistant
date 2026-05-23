@@ -13,3 +13,4 @@ PyPDF2
 python-multipart
 requests
 streamlit>=1.28.0
+torchvision
