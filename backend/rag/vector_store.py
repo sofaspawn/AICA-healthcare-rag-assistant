@@ -38,11 +38,47 @@ class VectorStore:
                 ids.append(f"{doc['id']}_{i}")
                 
         if texts:
-            self.db.add_texts(texts=texts, metadatas=metadatas, ids=ids)
-            print(f"Added {len(texts)} chunks to the vector store.")
+            # ChromaDB has a max batch size (~5461). Process in batches.
+            BATCH_SIZE = 5000
+            total = len(texts)
+            for start in range(0, total, BATCH_SIZE):
+                end = min(start + BATCH_SIZE, total)
+                self.db.add_texts(
+                    texts=texts[start:end],
+                    metadatas=metadatas[start:end],
+                    ids=ids[start:end],
+                )
+                print(f"Added batch {start // BATCH_SIZE + 1}: chunks {start+1}-{end} of {total}")
+            print(f"Finished adding {total} chunks to the vector store.")
             
+    def add_raw_texts(self, texts: list[str], metadatas: list[dict], ids: list[str]):
+        """
+        Adds pre-chunked texts directly to the vector store.
+        Used for uploaded documents (PDF/TXT) that don't need Q/A reformatting.
+        """
+        if texts:
+            BATCH_SIZE = 5000
+            total = len(texts)
+            for start in range(0, total, BATCH_SIZE):
+                end = min(start + BATCH_SIZE, total)
+                self.db.add_texts(
+                    texts=texts[start:end],
+                    metadatas=metadatas[start:end],
+                    ids=ids[start:end],
+                )
+                print(f"Added batch {start // BATCH_SIZE + 1}: chunks {start+1}-{end} of {total}")
+            print(f"Finished adding {total} raw text chunks to the vector store.")
+
     def similarity_search(self, query: str, k: int = 4):
         return self.db.similarity_search(query, k=k)
+
+    def similarity_search_with_filter(self, query: str, where_filter: dict, k: int = 4):
+        """
+        Similarity search filtered by metadata.
+        Example: where_filter={"source": "myfile.pdf"}
+        For multiple sources: where_filter={"source": {"$in": ["file1.pdf", "file2.pdf"]}}
+        """
+        return self.db.similarity_search(query, k=k, filter=where_filter)
 
 vector_store_instance = None
 

@@ -11,12 +11,23 @@ load_dotenv(dotenv_path=_env_path)
 # Import backend modules
 from backend.rag.vector_store import get_vector_store
 from backend.rag.retriever import retrieve_context
-from backend.rag.chat import generate_chat_response
-from backend.rules.sos_rules import check_sos
+from backend.rag.chat import chat_pipeline
 from backend.ingestion.download_dataset import download_and_export
 from backend.ingestion.preprocess import preprocess_data
 from PyPDF2 import PdfReader
 from backend.rag.chunker import chunk_document
+
+from ui.dashboard import render_risk_score_card, render_emergency_banner, render_trend_indicator, render_alert_history
+from ui.charts import render_vitals_charts
+from backend.clinical.patient_state import get_patient_state, update_patient_state
+from backend.database.db import DatabaseManager
+from backend.clinical.extraction import extract_clinical_data
+from backend.clinical.emergency_rules import EmergencyDetector
+from backend.clinical.trend_analysis import TrendAnalyzer
+from backend.clinical.scorer import score_patient
+from backend.clinical.alert_engine import AlertEngine
+
+PATIENT_ID = "patient_001"
 
 # Page configuration
 st.set_page_config(
@@ -246,6 +257,12 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "vector_store_ready" not in st.session_state:
     st.session_state.vector_store_ready = False
+if "uploaded_sources" not in st.session_state:
+    st.session_state.uploaded_sources = []
+if "patient_id" not in st.session_state:
+    st.session_state.patient_id = PATIENT_ID
+if "latest_patient_data" not in st.session_state:
+    st.session_state.latest_patient_data = None
 
 def check_vector_store():
     try:
@@ -265,17 +282,16 @@ def process_pdf(pdf_file):
 def ingest_file(file_content, filename):
     try:
         chunks = chunk_document(file_content)
-        documents = []
+        texts = []
+        metadatas = []
+        ids = []
         for i, chunk in enumerate(chunks):
-            documents.append({
-                "input": chunk,
-                "output": f"Document: {filename}",
-                "id": f"{filename}_{i}",
-                "metadata": {"source": filename}
-            })
+            texts.append(chunk)
+            metadatas.append({"source": filename, "chunk_index": i})
+            ids.append(f"{filename}_{i}")
         store = get_vector_store()
-        store.add_documents(documents)
-        return True, f"Successfully ingested {len(documents)} chunks from {filename}"
+        store.add_raw_texts(texts=texts, metadatas=metadatas, ids=ids)
+        return True, f"Successfully ingested {len(texts)} chunks from {filename}"
     except Exception as e:
         return False, f"Error ingesting file: {str(e)}"
 
@@ -327,7 +343,29 @@ with st.sidebar:
                     success, message = ingest_file(content, uploaded_file.name)
                     if success:
                         st.session_state.vector_store_ready = True
+                        if uploaded_file.name not in st.session_state.uploaded_sources:
+                            st.session_state.uploaded_sources.append(uploaded_file.name)
                         st.success(message)
+                        
+                        # Process uploaded document for vitals/state
+                        with st.spinner("Syncing patient state with new document..."):
+                            extracted_data = extract_clinical_data(content[:8000])
+                            state = update_patient_state(st.session_state.patient_id, extracted_data)
+                            emergency_result = EmergencyDetector.detect(content[:8000], extracted_data.symptoms)
+                            trend_result = TrendAnalyzer.analyze(state.vitals_history)
+                            score_result = score_patient(state, trend_result["score_modifier"], emergency_result["score_modifier"])
+                            all_alerts = list(set(score_result["alerts"] + trend_result["details"] + emergency_result["matched_symptoms"]))
+                            AlertEngine.process_alerts(st.session_state.patient_id, score_result["severity"], score_result["score"], all_alerts)
+                            
+                            st.session_state.latest_patient_data = {
+                                "is_emergency": emergency_result["is_emergency"],
+                                "emergency_symptoms": emergency_result["matched_symptoms"],
+                                "risk_score": score_result["score"],
+                                "severity": score_result["severity"],
+                                "trend": trend_result,
+                                "alerts": all_alerts
+                            }
+                            st.rerun() # Refresh UI with new score
                     else:
                         st.error(message)
                 except Exception as e:
@@ -341,91 +379,109 @@ with st.sidebar:
     else:
         st.warning("Vector store empty - ingest data first")
 
-# --- TOPBAR ---
-st.markdown("""
-<div class="topbar">
-    <div class="topbar-title">Patient Insights</div>
-    <div class="topbar-nav">
-        <a href="#" class="active">Overview</a>
-        <a href="#">Vitals</a>
-        <a href="#">History</a>
-        <a href="#">Meds</a>
-    </div>
-    <div style="display:flex; gap:16px; align-items:center; color:#58413f;">
-        <span class="material-symbols-outlined">notifications</span>
-        <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">account_circle</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+# --- TABS ---
+tab_overview, tab_vitals, tab_trends, tab_alerts = st.tabs(["Overview", "Vitals History", "Trend Analysis", "Alerts History"])
 
-
-# --- MAIN CHAT AREA ---
-
-# AI Welcome Card
-if len(st.session_state.messages) == 0:
-    st.markdown("""
-    <div class="ai-welcome">
-        <div class="ai-icon-wrapper">
-            <span class="ai-icon material-symbols-outlined">info</span>
-        </div>
-        <div>
-            <div class="ai-welcome-title">System Initialization</div>
-            <div class="ai-welcome-heading">Hello! I am your AI Healthcare Assistant.<br>How can I help you today?</div>
-            <div class="ai-disclaimer-box">
-                Please remember I am an AI, not a doctor. Always consult a healthcare professional for medical advice or diagnostic confirmation.
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# Display chat history
-for message in st.session_state.messages:
-    if message["role"] == "user":
-        st.markdown(f'<div class="bubble bubble-user">{message["content"]}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown(f'<div class="bubble bubble-assistant">{message["content"]}</div>', unsafe_allow_html=True)
-        if "retrieved_context" in message:
-            with st.expander("View Retrieved Context"):
-                unique_sources = []
-                for ctx in message["retrieved_context"]:
-                    source = ctx.get('source', 'N/A')
-                    if source not in unique_sources:
-                        unique_sources.append(source)
-                
-                for i, source in enumerate(unique_sources, 1):
-                    st.markdown(f"**Document {i}:**")
-                    st.markdown(f"Source: {source}")
-                    st.divider()
-
-# Chat input
-user_input = st.chat_input("Ask a health-related question... (e.g., 'What are the symptoms of asthma?')")
-
-if user_input:
-    # Append to state and display immediately
-    st.session_state.messages.append({"role": "user", "content": user_input})
+with tab_overview:
+    col1, col2 = st.columns([2, 1])
     
-    # Check for SOS
-    sos_result = check_sos(user_input)
-    if sos_result["is_sos"]:
-        st.markdown(f"""
-        <div class="sos-alert">
-            🚨 EMERGENCY DETECTED: {', '.join(sos_result['matched_rules'])}<br><br>
-            This query contains potential emergency symptoms. 
-            <strong>If this is a real emergency, please call 911 immediately.</strong>
-        </div>
-        """, unsafe_allow_html=True)
-        
+    with col2:
+        # Risk Score and active emergency banner on the side
+        if st.session_state.latest_patient_data:
+            data = st.session_state.latest_patient_data
+            render_emergency_banner(data.get("is_emergency", False), data.get("emergency_symptoms", []))
+            render_risk_score_card(data.get("risk_score", 0), data.get("severity", "LOW"))
+        else:
+            render_risk_score_card(0, "LOW")
+
+    with col1:
+        # AI Welcome Card
+        if len(st.session_state.messages) == 0:
+            st.markdown("""
+            <div class="ai-welcome">
+                <div class="ai-icon-wrapper">
+                    <span class="ai-icon material-symbols-outlined">info</span>
+                </div>
+                <div>
+                    <div class="ai-welcome-title">System Initialization</div>
+                    <div class="ai-welcome-heading">Hello! I am your AI Healthcare Assistant.<br>How can I help you today?</div>
+                    <div class="ai-disclaimer-box">
+                        Please remember I am an AI, not a doctor. Always consult a healthcare professional for medical advice or diagnostic confirmation.
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Display chat history
+        for message in st.session_state.messages:
+            if message["role"] == "user":
+                st.markdown(f'<div class="bubble bubble-user">{message["content"]}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="bubble bubble-assistant">{message["content"]}</div>', unsafe_allow_html=True)
+                if "retrieved_context" in message:
+                    with st.expander("View Retrieved Context"):
+                        unique_sources = []
+                        for ctx in message["retrieved_context"]:
+                            source = ctx.get('source', 'N/A')
+                            if source not in unique_sources:
+                                unique_sources.append(source)
+                        
+                        for i, source in enumerate(unique_sources, 1):
+                            st.markdown(f"**Document {i}:**")
+                            st.markdown(f"Source: {source}")
+                            st.divider()
+
+        # Chat input
+        user_input = st.chat_input("Ask a health-related question... (e.g., 'What are the symptoms of asthma?')")
+
+        if user_input:
+            # Append to state and display immediately
+            st.session_state.messages.append({"role": "user", "content": user_input})
+            st.session_state.pending_query = user_input
+            st.rerun() # Ensure user input is displayed immediately before processing
+
+# Process input if needed (we do this outside the main block so it executes even if rerendered)
+if st.session_state.get("pending_query"):
+    query_to_process = st.session_state.pending_query
+    st.session_state.pending_query = None # Clear it so it doesn't loop
+    
     try:
-        with st.spinner("Querying Base Dataset..."):
-            retrieval_data = retrieve_context(user_input)
-            context_str = retrieval_data["context_string"]
-            response_text = generate_chat_response(user_input, context_str)
+        with st.spinner("Processing clinical query..."):
+            chat_result = chat_pipeline(query_to_process, st.session_state.patient_id, st.session_state.uploaded_sources)
+            
+            st.session_state.latest_patient_data = {
+                "is_emergency": chat_result["is_emergency"],
+                "emergency_symptoms": chat_result["emergency_symptoms"],
+                "risk_score": chat_result["risk_score"],
+                "severity": chat_result["severity"],
+                "trend": chat_result["trend"],
+                "alerts": chat_result["alerts"]
+            }
             
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": response_text,
-                "retrieved_context": retrieval_data["metadata"]
+                "content": chat_result["response"],
+                "retrieved_context": chat_result["retrieved_context"]
             })
             st.rerun()
     except Exception as e:
         st.error(f"Error generating response: {str(e)}")
+
+
+with tab_vitals:
+    st.markdown("### Vitals History")
+    state = get_patient_state(st.session_state.patient_id)
+    render_vitals_charts(state.vitals_history)
+
+with tab_trends:
+    st.markdown("### Trend Analysis")
+    if st.session_state.latest_patient_data and "trend" in st.session_state.latest_patient_data:
+        render_trend_indicator(st.session_state.latest_patient_data["trend"])
+    else:
+        st.info("No recent interactions to analyze trends.")
+
+with tab_alerts:
+    st.markdown("### Alert History")
+    alerts = DatabaseManager.get_alerts(st.session_state.patient_id)
+    render_alert_history(alerts)
+
