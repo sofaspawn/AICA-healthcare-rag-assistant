@@ -80,24 +80,26 @@ def serve_frontend():
 @app.post("/ingest")
 def ingest_dataset():
     """
-    Triggers dataset download, preprocessing, and vector store ingestion.
+    Trigger ingestion of clinical PDFs as primary data; secondary data is assumed pre‑loaded.
     """
     try:
-        # 1. Download raw data
-        download_and_export()
-        # 2. Preprocess and normalize
-        processed_file_path = preprocess_data()
-        
-        # 3. Load processed data
-        with open(processed_file_path, "r", encoding="utf-8") as f:
-            documents = json.load(f)
-            
-        # 4. Add to vector store
+        # Load secondary data if not already in vector store
         store = get_vector_store()
-        store.add_documents(documents)
-        
-        return {"status": "success", "message": f"Successfully ingested {len(documents)} records."}
-        
+        # Ensure secondary data is present (processed_dataset.json)
+        # Load processed dataset if store is empty
+        if not store.db._collection.count():
+            processed_path = preprocess_data()
+            with open(processed_path, "r", encoding="utf-8") as f:
+                secondary_docs = json.load(f)
+                # Tag secondary priority
+                for doc in secondary_docs:
+                    doc.setdefault("metadata", {})["priority"] = "secondary"
+                store.add_documents(secondary_docs)
+        # Ingest primary clinical PDFs
+        from backend.ingestion.ingest_clinical import ingest_clinical
+        primary_docs = ingest_clinical()
+        store.add_documents(primary_docs)
+        return {"status": "success", "message": f"Ingested {len(primary_docs)} clinical documents."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

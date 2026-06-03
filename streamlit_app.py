@@ -365,6 +365,17 @@ with st.sidebar:
                                 "trend": trend_result,
                                 "alerts": all_alerts
                             }
+                            
+                            from backend.database.models import PatientHistoryRecord
+                            history_record = PatientHistoryRecord(
+                                patient_id=st.session_state.patient_id,
+                                interaction_text=f"Uploaded document: {uploaded_file.name}",
+                                extracted_symptoms=extracted_data.symptoms,
+                                risk_score=score_result["score"],
+                                severity=score_result["severity"]
+                            )
+                            DatabaseManager.insert_history(history_record)
+                            
                             st.rerun() # Refresh UI with new score
                     else:
                         st.error(message)

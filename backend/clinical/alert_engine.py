@@ -1,6 +1,9 @@
+import logging
 from typing import List
 from backend.database.models import AlertRecord
 from backend.database.db import DatabaseManager
+
+logger = logging.getLogger(__name__)
 
 class AlertEngine:
     @staticmethod
@@ -16,7 +19,13 @@ class AlertEngine:
                 score=score,
                 alerts=alerts
             )
-            DatabaseManager.insert_alert(record)
+            
+            insert_ok = False
+            try:
+                DatabaseManager.insert_alert(record)
+                insert_ok = True
+            except Exception as e:
+                logger.error(f"Failed to insert alert for patient_id {patient_id} with severity {severity}: {e}")
             
             # Here we would integrate Slack/Email/Twilio webhooks
             AlertEngine.dispatch_external_alerts(record)
