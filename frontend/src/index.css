@@ -2,34 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  .material-symbols-outlined {
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-  }
-  .material-symbols-outlined[data-weight="fill"] {
-    font-variation-settings: 'FILL' 1;
-  }
-  ::-webkit-scrollbar {
-    width: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: #e0bfbc;
-    border-radius: 10px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #8c716e;
-  }
-}
-
-@layer utilities {
-  @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .animate-fade-in-up {
-    animation: fadeInUp 0.4s ease-out forwards;
-  }
-}
+.material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+body { background-color: #fff8f7; overflow-x: hidden; }
+.minimal-card { background: #fff; border: 1px solid #e0bfbc; transition: all 0.3s ease; }
+.minimal-card:hover { border-color: #cc4944; box-shadow: 0 4px 12px rgba(204,73,68,0.04); }
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #e0bfbc; border-radius: 10px; }
+.sidebar-link.active { background: #fff0ef; color: #cc4944; font-weight: 700; }
+.drag-active { border-color: #cc4944 !important; background: #fff0ef !important; }
+.view-section.hidden { display: none !important; }

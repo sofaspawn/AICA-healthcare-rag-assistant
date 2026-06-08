@@ -1,222 +1,167 @@
-# Deployment Guide - Healthcare RAG Assistant on Streamlit
+# Deployment Guide — Multimodal Clinical Intelligence Platform
 
-## Option 1: Streamlit Community Cloud (Recommended - Free)
+## Local Development (Recommended)
 
-### Setup
+### Prerequisites
 
-1. **Push to GitHub**
-   ```bash
-   git push origin main
-   ```
+| Tool | Version | Install |
+|------|---------|---------|
+| Python | 3.10+ | [python.org](https://python.org) |
+| Ollama | latest | [ollama.com/download](https://ollama.com/download) |
+| ffmpeg | any | `brew install ffmpeg` (macOS) |
 
-2. **Go to Streamlit Cloud**
-   - Visit https://share.streamlit.io
-   - Click "New app"
-   - Select your GitHub repository
-   - Enter: `streamlit_app.py` as the main file
-   - Deploy!
+### 1. Clone & Set Up Environment
 
-3. **Configure Secrets**
-   - In your Streamlit Cloud dashboard
-   - Click the "⋮" menu → Settings
-   - Select "Secrets"
-   - Add your environment variables:
-     ```
-     OLLAMA_BASE_URL=http://your-ollama-url:11434/v1
-     OLLAMA_MODEL=qwen2.5:7b
-     OPENROUTER_API_KEY=your_key_here
-     ```
+```bash
+git clone <repo-url>
+cd healthcare-rag-assistant
 
-4. **Optional: Deploy Ollama Separately**
-   - Use a service like AWS EC2 or DigitalOcean
-   - Run Ollama there
-   - Point `OLLAMA_BASE_URL` to that instance
+python3 -m venv venv
+source venv/bin/activate      # macOS/Linux
+# venv\Scripts\activate       # Windows
 
----
+pip install -r requirements.txt
+```
 
-## Option 2: Render.com (Free tier available)
+### 2. Pull Ollama Models
 
-### Setup
+```bash
+# Required: Clinical reasoning model
+ollama pull qwen2.5:7b
 
-1. **Create Web Service**
-   - Go to https://render.com
-   - Click "New +" → "Web Service"
-   - Connect your GitHub repository
-   - Choose Python runtime
+# Required: Vision model for medical images and video frames
+ollama pull llava
 
-2. **Configure Build & Start**
-   - **Build Command:**
-     ```bash
-     pip install -r requirements.txt
-     ```
-   - **Start Command:**
-     ```bash
-     streamlit run streamlit_app.py --server.port=10000 --server.address=0.0.0.0
-     ```
+# Optional: Faster/lighter alternative for low-RAM machines
+# ollama pull qwen2.5:3b
+```
 
-3. **Set Environment Variables**
-   - In Render dashboard → Environment
-   - Add all required `.env` variables
-   - Add: `STREAMLIT_SERVER_HEADLESS=true`
+### 3. Start Services
 
-4. **Deploy**
-   - Click "Deploy"
-   - Wait for build to complete
+Open **three separate terminals**:
+
+**Terminal 1 — Ollama LLM Server:**
+```bash
+ollama serve
+```
+
+**Terminal 2 — FastAPI Backend:**
+```bash
+source venv/bin/activate
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Terminal 3 — Streamlit Dashboard:**
+```bash
+source venv/bin/activate
+streamlit run streamlit_app.py
+```
+
+Then open **http://localhost:8501** in your browser.
 
 ---
 
-## Option 3: Hugging Face Spaces (Free)
+## Running Just Streamlit (Standalone Mode)
 
-### Setup
+The Streamlit app includes a **direct local fallback** — it will import backend modules
+directly if the FastAPI backend is not running. This is the simplest way to run the platform:
 
-1. **Create New Space**
-   - Go to https://huggingface.co/spaces
-   - Click "Create new Space"
-   - Name it `healthcare-rag-assistant`
-   - Select **Streamlit** as runtime
-   - Public or Private
+```bash
+source venv/bin/activate
+streamlit run streamlit_app.py
+```
 
-2. **Upload Code**
-   ```bash
-   git clone https://huggingface.co/spaces/YOUR_USERNAME/healthcare-rag-assistant
-   cd healthcare-rag-assistant
-   git remote add upstream https://github.com/samridh-111/healthcare-rag-assistant.git
-   git pull upstream main
-   git push
-   ```
-
-3. **Add Secrets**
-   - In Space settings → Repository secrets
-   - Add environment variables
-
-4. **Deploy**
-   - Automatically deploys on push!
+> **Note:** Ollama must still be running (`ollama serve`) for reasoning and vision features.
 
 ---
 
-## Option 4: Railway (Easy, paid after free credits)
+## Hugging Face Spaces Deployment
 
-### Setup
+### space configuration (`README.md` header)
 
-1. **Connect GitHub**
-   - Go to https://railway.app
-   - Click "New Project"
-   - Select "Deploy from GitHub repo"
-   - Choose your repo
+```yaml
+---
+title: Multimodal Clinical Intelligence Platform
+emoji: 🩺
+colorFrom: blue
+colorTo: indigo
+sdk: streamlit
+sdk_version: 1.32.0
+app_file: streamlit_app.py
+pinned: false
+---
+```
 
-2. **Configure**
-   - Add variables in project settings
-   - Railway auto-detects requirements.txt
+### System Packages (packages.txt)
 
-3. **Set Start Command**
-   - In deployment settings, add:
-     ```
-     streamlit run streamlit_app.py --server.port=$PORT --server.address=0.0.0.0
-     ```
+Create a `packages.txt` file in the root:
+
+```
+ffmpeg
+libgl1-mesa-glx
+libglib2.0-0
+```
+
+### requirements.txt
+
+Use the existing `requirements.txt`. Remove `ollama` if you are using a Groq/cloud fallback on Spaces, or ensure Ollama is available via a Docker-based Space.
+
+### Important Limitations on Spaces
+
+- **Ollama is NOT available on standard CPU/GPU Spaces** — you need to use a Docker Space or a hosted model endpoint.
+- For Spaces deployment, consider adding a Groq API fallback for the reasoning layer (set `GROQ_API_KEY` in Spaces secrets).
 
 ---
 
-## Important Considerations
+## Environment Variables
 
-### LLM Inference
+Create a `.env` file in the project root:
 
-**For Cloud Deployment, you have options:**
+```env
+# Optional: Groq API fallback (for cloud deployment)
+GROQ_API_KEY=your_groq_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+```
 
-1. **Local Ollama (Self-hosted)**
-   - Deploy Ollama on your own server
-   - Streamlit Cloud → connects to it
-   - Full privacy, but you manage infra
-   - Cheapest if you have existing server
-
-2. **OpenRouter API** (Easiest)
-   - Just add API key to secrets
-   - No server management
-   - Cost: ~$0.01-0.10 per query
-   - Update `backend/rag/chat.py` to use OpenRouter
-
-3. **Azure OpenAI** (Enterprise)
-   - Update chat.py to use Azure endpoint
-   - Professional support available
-
-### Vector Store Persistence
-
-- ChromaDB files are stored in `backend/db/`
-- Cloud deployments use ephemeral storage
-- **Solution:** Use persistent storage service
-  - **Render:** Use volume mount
-  - **Railway:** Attach PostgreSQL for persistence
-  - **Hugging Face Spaces:** Use dataset library
-  - **Streamlit Cloud:** Upload initial data on startup
-
-### Environment File
-
-**Don't commit `.env`!** Instead:
-- Add to `.gitignore` (already done)
-- Use cloud platform's secrets manager
-- Each platform has different UI for this
+> For **local deployment**, no API keys are required — the platform runs entirely on local Ollama models.
 
 ---
 
-## Quick Deployment Checklist
+## Directory Structure
 
-- [ ] Code pushed to GitHub
-- [ ] Cloud platform account created
-- [ ] Secrets configured (API keys, URLs)
-- [ ] Start command configured
-- [ ] Initial data ingestion plan (dataset or documents)
-- [ ] Test on free tier first
-- [ ] Monitor usage and costs
-
----
-
-## Troubleshooting Cloud Deployment
-
-### "Module not found" error
-- Ensure `requirements.txt` includes all dependencies
-- Run `pip install -r requirements.txt` locally to test
-
-### "Connection refused" to Ollama
-- If using local Ollama: not possible with cloud Streamlit
-- Solution: Use OpenRouter or cloud-hosted Ollama
-- Or: Deploy Ollama to same platform (complex)
-
-### Slow responses
-- Cloud free tiers have limited resources
-- Consider paid tier or optimize model size
-- Use faster model: `mistral:7b` instead of `qwen2.5:7b`
-
-### Out of memory
-- Reduce batch sizes in code
-- Use smaller embedding models
-- Add: `--logger.level=error` to reduce logs
-
-### Data not persisting
-- Cloud instances restart frequently
-- Need persistent storage service
-- Or regenerate from uploaded files each time
+```
+healthcare-rag-assistant/
+├── backend/
+│   ├── clinical/          # Patient state, scoring, emergency rules
+│   ├── database/          # SQLite models and DatabaseManager
+│   ├── ingestion/         # All ingestion modules (doc/image/audio/video)
+│   │   └── documents/     # PDF, DOCX, TXT parsers
+│   ├── knowledge/         # Clinical knowledge builder (→ ChromaDB)
+│   ├── rag/               # Retriever, Ollama client, chat pipeline
+│   └── rules/             # SOS detection rules
+├── scratch/
+│   └── uploads/           # Uploaded files (auto-created)
+├── streamlit_app.py       # Main UI
+├── backend/main.py        # FastAPI backend
+├── requirements.txt
+└── DEPLOYMENT.md
+```
 
 ---
 
-## Cost Estimates (Monthly)
+## Verification
 
-| Platform | Model | Cost |
-|----------|-------|------|
-| Streamlit Cloud (Free) | Ollama (self-hosted) | $0 + server cost |
-| Render (Free) | Ollama included | $0 (limited) |
-| Railway | Ollama included | $5-20 |
-| Hugging Face | Ollama included | $0 (limited) |
-| With OpenRouter | API calls | $1-10 |
+After starting all services, run the following checks:
 
----
+```bash
+# 1. Check FastAPI health
+curl http://localhost:8000/health
 
-## Recommended for Production
+# 2. Test chat endpoint
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"query": "I have a headache and mild fever", "patient_id": "patient_001"}'
 
-**Best setup for production:**
-1. Streamlit Cloud (or similar) for frontend
-2. Dedicated Ollama server on:
-   - AWS EC2 (g4dn instance, ~$0.50/hr)
-   - DigitalOcean GPU ($60-120/month)
-   - RunPod ($10-30/month)
-3. Optional: PostgreSQL for data persistence
-
-This keeps frontend cheap and inference optimized!
+# 3. Check patient timeline
+curl http://localhost:8000/patient/timeline?patient_id=patient_001
+```

@@ -29,10 +29,14 @@ def get_patient_state(patient_id: str) -> PatientState:
         
     symptoms_history = list(set(symptoms_history))
     
+    med_records = DatabaseManager.get_medications(patient_id)
+    medications = [m.medicine for m in med_records]
+    
     return PatientState(
         patient_id=patient_id,
         vitals_history=vitals_history,
-        symptoms_history=symptoms_history
+        symptoms_history=symptoms_history,
+        medications=medications
     )
 
 def update_patient_state(patient_id: str, extracted_data: ExtractedClinicalData) -> PatientState:
@@ -61,4 +65,21 @@ def update_patient_state(patient_id: str, extracted_data: ExtractedClinicalData)
     # Ensure uniqueness
     state.symptoms_history = list(set(state.symptoms_history))
     
+    # Append medications
+    if extracted_data.medications:
+        from backend.database.models import MedicationRecord
+        from datetime import datetime
+        ts = datetime.utcnow().isoformat()
+        for med in extracted_data.medications:
+            if med not in state.medications:
+                state.medications.append(med)
+                record = MedicationRecord(
+                    patient_id=patient_id,
+                    timestamp=ts,
+                    medicine=med,
+                    dosage="Unknown (Extracted from text)",
+                    frequency="Unknown"
+                )
+                DatabaseManager.insert_medication(record)
+                
     return state

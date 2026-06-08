@@ -50,3 +50,57 @@ class PatientHistoryRecord(BaseModel):
             except:
                 d["extracted_symptoms"] = []
         return cls(**d)
+
+class MedicationRecord(BaseModel):
+    id: Optional[int] = None
+    patient_id: str
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    medicine: str
+    dosage: str
+    frequency: str
+    source_file: Optional[str] = None
+
+class LabResultRecord(BaseModel):
+    id: Optional[int] = None
+    patient_id: str
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    test: str
+    value: float
+    unit: str
+    reference_range: Optional[str] = None
+    source_file: Optional[str] = None
+
+class ImageRecord(BaseModel):
+    id: Optional[int] = None
+    patient_id: str
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    image_type: str
+    observation: str
+    image_path: str
+
+class VideoRecord(BaseModel):
+    id: Optional[int] = None
+    patient_id: str
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    video_path: str
+    summary: str
+    observations: str
+
+class RiskRecord(BaseModel):
+    id: Optional[int] = None
+    patient_id: str
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    risk_score: int
+    reasons: List[str]
+    severity: str
+
+    @classmethod
+    def from_db(cls, row: dict):
+        d = dict(row)
+        if "reasons" in d and isinstance(d["reasons"], str):
+            try:
+                d["reasons"] = json.loads(d["reasons"])
+            except:
+                d["reasons"] = []
+        return cls(**d)
+

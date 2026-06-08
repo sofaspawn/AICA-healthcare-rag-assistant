@@ -14,3 +14,9 @@ python-multipart
 requests
 streamlit>=1.28.0
 torchvision
+pymupdf
+pdfplumber
+python-docx
+easyocr
+faster-whisper
+opencv-python-headless

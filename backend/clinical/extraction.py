@@ -1,56 +1,44 @@
-import os
 import json
-from openai import OpenAI
 from backend.clinical.schemas import ExtractedClinicalData
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-
-_groq_client = OpenAI(
-    base_url="https://api.groq.com/openai/v1",
-    api_key=GROQ_API_KEY,
-)
+from backend.rag.ollama_client import query_ollama_json
 
 def extract_clinical_data(text: str) -> ExtractedClinicalData:
     """
-    Extracts structured clinical data (symptoms, vitals, medications) from user text.
+    Extracts structured clinical data (symptoms, vitals, medications) from text using local Qwen2.5:7B.
     """
-    system_prompt = """You are a medical data extraction assistant.
-Extract symptoms, vitals, and medications from the user's text.
-Output MUST be a valid JSON object matching the following structure:
-{
-  "symptoms": ["string"],
-  "vitals": {
-    "spo2": float or null,
-    "heart_rate": float or null,
-    "temperature": float or null,
-    "respiratory_rate": float or null,
-    "systolic_bp": float or null,
-    "diastolic_bp": float or null
-  },
-  "medications": ["string"]
-}
-
-If a field is not present in the text, return null or empty list as appropriate. DO NOT add markdown block formatting around the JSON output, return raw JSON.
-"""
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": text}
-    ]
+    prompt = f"Clinical text:\n{text}\n\n" \
+             f"Extract symptoms, vitals, and medications mentioned in the text.\n" \
+             f"Output MUST be a valid JSON object matching the following structure:\n" \
+             f"{{\n" \
+             f"  \"symptoms\": [\"string\"],\n" \
+             f"  \"vitals\": {{\n" \
+             f"    \"spo2\": float or null,\n" \
+             f"    \"heart_rate\": float or null,\n" \
+             f"    \"temperature\": float or null,\n" \
+             f"    \"respiratory_rate\": float or null,\n" \
+             f"    \"systolic_bp\": float or null,\n" \
+             f"    \"diastolic_bp\": float or null\n" \
+             f"  }},\n" \
+             f"  \"medications\": [\"string\"]\n" \
+             f"}}\n\n" \
+             f"If a vitals field is not mentioned, set it to null. If symptoms or medications are not mentioned, return an empty list. " \
+             f"Do not include markdown formatting or explanation. Output raw JSON only."
+             
+    system_prompt = "You are a clinical data extraction assistant. Extract symptoms, vitals, and medications from clinical text."
     
     try:
-        response = _groq_client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=messages,
-            temperature=0.0,
-            response_format={"type": "json_object"}
-        )
-        
-        json_str = response.choices[0].message.content
-        data = json.loads(json_str)
+        data = query_ollama_json(prompt, system_prompt)
+        if not isinstance(data, dict):
+            data = {}
+        if "vitals" not in data or not isinstance(data["vitals"], dict):
+            data["vitals"] = {}
+        # Ensure all vitals keys are present
+        for key in ["spo2", "heart_rate", "temperature", "respiratory_rate", "systolic_bp", "diastolic_bp"]:
+            data["vitals"].setdefault(key, None)
+        data.setdefault("symptoms", [])
+        data.setdefault("medications", [])
         return ExtractedClinicalData(**data)
     except Exception as e:
-        print(f"Extraction error: {e}")
-        # Return empty data on failure
+        print(f"Local clinical extraction error: {e}")
         return ExtractedClinicalData()
+
