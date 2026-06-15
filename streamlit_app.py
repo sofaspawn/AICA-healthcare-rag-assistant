@@ -36,7 +36,7 @@ if uploaded_file:
     # Streamlit provides a BytesIO – we need to send as multipart
     files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
     params = {"patient_id": patient_id}
-    url = f"{BACKEND_URL}{endpoint}"  # backend expects raw endpoint without /api/v1 prefix (as per original routes)
+    url = f"{BACKEND_URL}{API_PREFIX}{endpoint}"
     try:
         with st.spinner(f"Sending {uploaded_file.name} to backend …"):
             response = requests.post(url, params=params, files=files)
@@ -56,7 +56,7 @@ if st.button("Send"):
     if not query.strip():
         st.warning("Please enter a question.")
     else:
-        chat_url = f"{BACKEND_URL}/chat"
+        chat_url = f"{BACKEND_URL}{API_PREFIX}/chat"
         payload = {"query": query, "patient_id": patient_id}
         try:
             with st.spinner("Waiting for response …"):

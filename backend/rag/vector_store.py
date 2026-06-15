@@ -50,7 +50,7 @@ class VectorStore:
             return
         
         # Generate embeddings
-        embs = self.embeddings.encode(texts)
+        embs = self.embeddings.encode(texts)  # returns List[List[float]]
         
         records = []
         for i in range(len(texts)):
@@ -58,7 +58,7 @@ class VectorStore:
             records.append({
                 "patient_id": patient_id,
                 "content": texts[i],
-                "embedding": embs[i].tolist(),
+                "embedding": embs[i] if isinstance(embs[i], list) else list(embs[i]),
                 "metadata": metadatas[i]
             })
             
@@ -77,7 +77,7 @@ class VectorStore:
             return []
             
         # Get query embedding
-        query_emb = self.embeddings.encode([query])[0].tolist()
+        query_emb = self.embeddings.encode_single(query)
         
         # Perform similarity search via rpc if pgvector matching function is defined
         # Assume a function match_clinical_knowledge exists in Supabase

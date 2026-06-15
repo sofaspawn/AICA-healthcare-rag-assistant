@@ -12,5 +12,5 @@ supabase
 groq
 tenacity
 opencv-python-headless
-sentence-transformers
+numpy
 streamlit
