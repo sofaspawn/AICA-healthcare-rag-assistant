@@ -1,25 +1,22 @@
-import os
-from langchain_community.vectorstores import Chroma
+import logging
 from backend.rag.embeddings import get_embedding_model
 from backend.rag.chunker import chunk_document
+from backend.database.db import supabase
 
-DB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "db")
-COLLECTION_NAME = "healthcare_docs"
+logger = logging.getLogger(__name__)
 
 class VectorStore:
     def __init__(self):
-        os.makedirs(DB_DIR, exist_ok=True)
         self.embeddings = get_embedding_model()
-        self.db = Chroma(
-            collection_name=COLLECTION_NAME,
-            embedding_function=self.embeddings,
-            persist_directory=DB_DIR
-        )
         
     def add_documents(self, documents: list[dict]):
         """
         Expects a list of dictionaries, each having 'input', 'output', 'id', 'metadata'.
         """
+        if not supabase:
+            logger.warning("Supabase not configured. Skipping vector add.")
+            return
+
         texts = []
         metadatas = []
         ids = []
@@ -37,48 +34,64 @@ class VectorStore:
                 metadatas.append(meta)
                 ids.append(f"{doc['id']}_{i}")
                 
-        if texts:
-            # ChromaDB has a max batch size (~5461). Process in batches.
-            BATCH_SIZE = 5000
-            total = len(texts)
-            for start in range(0, total, BATCH_SIZE):
-                end = min(start + BATCH_SIZE, total)
-                self.db.add_texts(
-                    texts=texts[start:end],
-                    metadatas=metadatas[start:end],
-                    ids=ids[start:end],
-                )
-                print(f"Added batch {start // BATCH_SIZE + 1}: chunks {start+1}-{end} of {total}")
-            print(f"Finished adding {total} chunks to the vector store.")
-            
+        self._batch_insert(texts, metadatas, ids)
+
     def add_raw_texts(self, texts: list[str], metadatas: list[dict], ids: list[str]):
         """
         Adds pre-chunked texts directly to the vector store.
-        Used for uploaded documents (PDF/TXT) that don't need Q/A reformatting.
         """
-        if texts:
-            BATCH_SIZE = 5000
-            total = len(texts)
-            for start in range(0, total, BATCH_SIZE):
-                end = min(start + BATCH_SIZE, total)
-                self.db.add_texts(
-                    texts=texts[start:end],
-                    metadatas=metadatas[start:end],
-                    ids=ids[start:end],
-                )
-                print(f"Added batch {start // BATCH_SIZE + 1}: chunks {start+1}-{end} of {total}")
-            print(f"Finished adding {total} raw text chunks to the vector store.")
+        if not supabase:
+            logger.warning("Supabase not configured. Skipping vector add.")
+            return
+        self._batch_insert(texts, metadatas, ids)
 
-    def similarity_search(self, query: str, k: int = 4):
-        return self.db.similarity_search(query, k=k)
+    def _batch_insert(self, texts: list[str], metadatas: list[dict], ids: list[str]):
+        if not texts:
+            return
+        
+        # Generate embeddings
+        embs = self.embeddings.encode(texts)
+        
+        records = []
+        for i in range(len(texts)):
+            patient_id = metadatas[i].get("patient_id", "unknown")
+            records.append({
+                "patient_id": patient_id,
+                "content": texts[i],
+                "embedding": embs[i].tolist(),
+                "metadata": metadatas[i]
+            })
+            
+        BATCH_SIZE = 100
+        for start in range(0, len(records), BATCH_SIZE):
+            end = min(start + BATCH_SIZE, len(records))
+            batch = records[start:end]
+            try:
+                supabase.table("clinical_knowledge").insert(batch).execute()
+                logger.info(f"Inserted vector batch {start // BATCH_SIZE + 1}")
+            except Exception as e:
+                logger.error(f"Error inserting vector batch: {e}")
 
-    def similarity_search_with_filter(self, query: str, where_filter: dict, k: int = 4):
-        """
-        Similarity search filtered by metadata.
-        Example: where_filter={"source": "myfile.pdf"}
-        For multiple sources: where_filter={"source": {"$in": ["file1.pdf", "file2.pdf"]}}
-        """
-        return self.db.similarity_search(query, k=k, filter=where_filter)
+    def similarity_search(self, query: str, patient_id: str, k: int = 4):
+        if not supabase:
+            return []
+            
+        # Get query embedding
+        query_emb = self.embeddings.encode([query])[0].tolist()
+        
+        # Perform similarity search via rpc if pgvector matching function is defined
+        # Assume a function match_clinical_knowledge exists in Supabase
+        try:
+            response = supabase.rpc("match_clinical_knowledge", {
+                "query_embedding": query_emb,
+                "match_threshold": 0.5,
+                "match_count": k,
+                "p_patient_id": patient_id
+            }).execute()
+            return response.data
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}")
+            return []
 
 vector_store_instance = None
 

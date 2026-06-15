@@ -117,7 +117,7 @@ function appendChat(role, text) {
 
 async function loadSummary() {
     try {
-        const s = await api(`/patient/summary?patient_id=${encodeURIComponent(patientId)}`);
+        const s = await api(`/api/v1/patient/summary?patient_id=${encodeURIComponent(patientId)}`);
         renderVitalsBadge(s.severity);
         renderAlerts(s.priority_alerts);
         renderOverview(s);
@@ -133,7 +133,7 @@ async function loadSummary() {
 async function loadTimeline(container) {
     if (!container) return;
     try {
-        const { timeline } = await api(`/patient/timeline?patient_id=${encodeURIComponent(patientId)}`);
+        const { timeline } = await api(`/api/v1/patient/timeline?patient_id=${encodeURIComponent(patientId)}`);
         if (!timeline?.length) {
             container.innerHTML = '<p class="text-outline">No events yet. Upload records or start a chat.</p>';
             return;
@@ -157,7 +157,7 @@ async function openVitalsModal() {
     modal.classList.add('flex');
     body.innerHTML = 'Loading…';
     try {
-        const { vitals } = await api(`/patient/vitals?patient_id=${encodeURIComponent(patientId)}`);
+        const { vitals } = await api(`/api/v1/patient/vitals?patient_id=${encodeURIComponent(patientId)}`);
         body.innerHTML = vitals?.length
             ? vitals.map((v) => `<div class="mb-sm p-sm bg-surface-container-low rounded-lg font-label-sm">
                 <strong>${esc(v.timestamp?.slice(0, 10))}</strong> — HR ${v.heart_rate ?? '—'}, SpO₂ ${v.spo2 ?? '—'}%, Temp ${v.temperature ?? '—'}°F</div>`).join('')
@@ -174,7 +174,7 @@ async function openLabsModal() {
     modal.classList.add('flex');
     body.innerHTML = 'Loading…';
     try {
-        const { labs } = await api(`/patient/labs?patient_id=${encodeURIComponent(patientId)}`);
+        const { labs } = await api(`/api/v1/patient/labs?patient_id=${encodeURIComponent(patientId)}`);
         body.innerHTML = labs?.length
             ? labs.map((l) => `<div class="mb-sm p-sm bg-surface-container-low rounded-lg font-label-sm">
                 <strong>${esc(l.test)}</strong>: ${l.value} ${esc(l.unit)} <span class="text-outline">(ref ${esc(l.reference_range || 'N/A')})</span></div>`).join('')
@@ -200,7 +200,7 @@ async function sendChat() {
     appendChat('user', text);
     setLoading(true, 'Cross-referencing datasets…');
     try {
-        const data = await api('/chat', {
+        const data = await api('/api/v1/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: text, patient_id: patientId }),
@@ -229,7 +229,7 @@ async function handleUpload(file, endpoint, statusEl) {
     const form = new FormData();
     form.append('file', file);
     try {
-        const data = await api(`${endpoint}?patient_id=${encodeURIComponent(patientId)}`, { method: 'POST', body: form });
+        const data = await api(`/api/v1${endpoint}?patient_id=${encodeURIComponent(patientId)}`, { method: 'POST', body: form });
         if (statusEl) statusEl.innerHTML = `<span class="text-on-secondary-container">${esc(data.message)}</span>`;
         appendChat('assistant', data.message || `Uploaded ${file.name}`);
         await loadSummary();
@@ -321,7 +321,7 @@ async function checkHealth() {
     const el = $('#api-status');
     try {
         const h = await api('/health');
-        if (el) el.textContent = `API: ${h.status} · Ollama: ${h.ollama_available ? 'ready' : 'offline'}`;
+        if (el) el.textContent = `API: ${h.status} · AI: Groq Ready`;
     } catch {
         if (el) el.textContent = 'API unreachable — start backend with uvicorn backend.main:app';
     }

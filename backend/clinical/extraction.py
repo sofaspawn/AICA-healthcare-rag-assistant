@@ -1,10 +1,13 @@
 import json
+import logging
 from backend.clinical.schemas import ExtractedClinicalData
-from backend.rag.ollama_client import query_ollama_json
+from backend.groq.provider import get_llm_provider
 
-def extract_clinical_data(text: str) -> ExtractedClinicalData:
+logger = logging.getLogger(__name__)
+
+async def extract_clinical_data(text: str) -> ExtractedClinicalData:
     """
-    Extracts structured clinical data (symptoms, vitals, medications) from text using local Qwen2.5:7B.
+    Extracts structured clinical data (symptoms, vitals, medications) from text using Groq.
     """
     prompt = f"Clinical text:\n{text}\n\n" \
              f"Extract symptoms, vitals, and medications mentioned in the text.\n" \
@@ -27,7 +30,14 @@ def extract_clinical_data(text: str) -> ExtractedClinicalData:
     system_prompt = "You are a clinical data extraction assistant. Extract symptoms, vitals, and medications from clinical text."
     
     try:
-        data = query_ollama_json(prompt, system_prompt)
+        provider = get_llm_provider()
+        response_str = await provider.generate(
+            prompt, 
+            system_prompt,
+            response_format={"type": "json_object"}
+        )
+        
+        data = json.loads(response_str)
         if not isinstance(data, dict):
             data = {}
         if "vitals" not in data or not isinstance(data["vitals"], dict):
@@ -39,6 +49,5 @@ def extract_clinical_data(text: str) -> ExtractedClinicalData:
         data.setdefault("medications", [])
         return ExtractedClinicalData(**data)
     except Exception as e:
-        print(f"Local clinical extraction error: {e}")
+        logger.error(f"Groq clinical extraction error: {e}")
         return ExtractedClinicalData()
-

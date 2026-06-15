@@ -10,11 +10,11 @@ from backend.clinical.scorer import score_patient
 from backend.clinical.alert_engine import AlertEngine
 from backend.database.models import PatientHistoryRecord, RiskRecord
 from backend.database.db import DatabaseManager
-from backend.rag.ollama_client import query_ollama_text
+from backend.groq.provider import get_llm_provider
 
-def generate_chat_response(query: str, context_string: str, patient_context: str = "") -> str:
+async def generate_chat_response(query: str, context_string: str, patient_context: str = "") -> str:
     """
-    Generates a response using local Qwen2.5:7B.
+    Generates a response using Groq.
     """
     system_prompt = """You are a highly cautious and expert AI clinical reasoning assistant.
 Your goal is to answer the user's queries based on the provided retrieved medical context and specific patient data.
@@ -36,31 +36,19 @@ PATIENT STRUCTURED DATA:
 """
     prompt = f"Patient Query: {query}\n\nClinical Response:"
     
-    return query_ollama_text(
+    provider = get_llm_provider()
+    return await provider.generate(
         prompt=prompt,
-        system_prompt=system_prompt.format(context=context_string, patient_context=patient_context),
-        model="qwen2.5:7b"
+        system_prompt=system_prompt.format(context=context_string, patient_context=patient_context)
     )
 
-def chat_pipeline(query: str, patient_id: str = "patient_001", uploaded_sources: list = None):
-    """
-    Multimodal Chat Pipeline:
-    1. Retrieve relevant multimodal context from Chroma
-    2. Extract clinical data (symptoms, vitals) from current query
-    3. Update patient state in DB
-    4. Run emergency detection
-    5. Run trend analysis
-    6. Run deterioration scoring & save to SQLite
-    7. Generate alerts
-    8. Compile unified patient history/findings from SQLite
-    9. Run local clinical reasoning
-    """
+async def chat_pipeline(query: str, patient_id: str = "patient_001", uploaded_sources: list = None):
     # 1. Retrieve RAG Context
     retrieval_data = retrieve_context(query, patient_id=patient_id)
     context_str = retrieval_data["context_string"]
     
     # 2. Extract structured data
-    extracted_data = extract_clinical_data(query)
+    extracted_data = await extract_clinical_data(query)
     
     # 3. Update patient state
     state = update_patient_state(patient_id, extracted_data)
@@ -78,7 +66,7 @@ def chat_pipeline(query: str, patient_id: str = "patient_001", uploaded_sources:
         emergency_score_modifier=emergency_result["score_modifier"]
     )
     
-    # Save risk score record to risk_history
+    # Save risk score record
     timestamp = datetime.utcnow().isoformat()
     risk_record = RiskRecord(
         patient_id=patient_id,
@@ -89,11 +77,7 @@ def chat_pipeline(query: str, patient_id: str = "patient_001", uploaded_sources:
     )
     DatabaseManager.insert_risk(risk_record)
     
-    # Combine alerts
-    all_alerts = score_result["reasons"] + trend_result["details"] + emergency_result["matched_symptoms"]
-    all_alerts = list(set(all_alerts))
-    
-    # 7. Process alerts
+    all_alerts = list(set(score_result["reasons"] + trend_result["details"] + emergency_result["matched_symptoms"]))
     AlertEngine.process_alerts(patient_id, score_result["severity"], score_result["risk_score"], all_alerts)
     
     # Log patient history to DB
@@ -107,41 +91,25 @@ def chat_pipeline(query: str, patient_id: str = "patient_001", uploaded_sources:
     )
     DatabaseManager.insert_history(history_record)
     
-    # 8. Compile unified patient details from SQLite for the LLM context
-    # Current Vitals
+    # Compile patient details
     cv = state.current_vitals
-    if cv:
-        vitals_str = f"SpO2: {cv.spo2}%, Heart Rate: {cv.heart_rate} bpm, Temperature: {cv.temperature}°F, " \
-                     f"Respiratory Rate: {cv.respiratory_rate}/min, Blood Pressure: {cv.systolic_bp}/{cv.diastolic_bp} mmHg"
-    else:
-        vitals_str = "No vitals recorded"
+    vitals_str = f"SpO2: {cv.spo2}%, Heart Rate: {cv.heart_rate} bpm, Temp: {cv.temperature}°F, Resp: {cv.respiratory_rate}/min, BP: {cv.systolic_bp}/{cv.diastolic_bp} mmHg" if cv else "No vitals recorded"
         
-    # Medications
     meds = DatabaseManager.get_medications(patient_id)
     meds_str = ", ".join([f"{m.medicine} ({m.dosage}, {m.frequency})" for m in meds]) if meds else "No medications recorded"
     
-    # Lab values
     labs = DatabaseManager.get_lab_results(patient_id)
     labs_str = ", ".join([f"{l.test}: {l.value} {l.unit} (Ref: {l.reference_range or 'N/A'})" for l in labs]) if labs else "No lab values recorded"
     
-    # Medical images
     imgs = DatabaseManager.get_images(patient_id)
     imgs_str = "\n".join([f"- {img.image_type.upper()}: {img.observation}" for img in imgs]) if imgs else "No medical images analyzed"
     
-    # Videos
     vids = DatabaseManager.get_videos(patient_id)
-    vids_str = "\n".join([f"- Video ({os.path.basename(vid.video_path)}): {vid.summary}" for vid in vids]) if vids else "No video gait observations"
+    vids_str = "\n".join([f"- Video: {vid.summary}" for vid in vids]) if vids else "No video gait observations"
     
-    # Timeline history
     history = DatabaseManager.get_patient_history(patient_id, limit=10)
-    history_lines = []
-    for h in history:
-        time_display = h.timestamp.split("T")[0]
-        symptom_list = ", ".join(h.extracted_symptoms) if h.extracted_symptoms else "none"
-        history_lines.append(f"Date: {time_display} | Symptoms: {symptom_list} | Risk Score: {h.risk_score} ({h.severity})")
-    history_str = "\n".join(history_lines) if history_lines else "No history timeline available"
+    history_str = "\n".join([f"Date: {h.timestamp.split('T')[0]} | Symptoms: {', '.join(h.extracted_symptoms) if h.extracted_symptoms else 'none'} | Risk: {h.risk_score} ({h.severity})" for h in history]) if history else "No history timeline"
 
-    # Construct the final patient profile context
     patient_context_string = f"""Patient ID: {patient_id}
 Current Calculated Risk Score: {score_result['risk_score']}/100 ({score_result['severity']})
 Triggers & Warnings: {', '.join(score_result['reasons'])}
@@ -156,9 +124,8 @@ Video Findings:
 Historical Timeline:
 {history_str}"""
 
-    # 9. Generate final AI response
     try:
-        response_text = generate_chat_response(query, context_str, patient_context_string)
+        response_text = await generate_chat_response(query, context_str, patient_context_string)
     except Exception as e:
         response_text = f"Error generating reasoning response: {str(e)}"
         
@@ -172,4 +139,3 @@ Historical Timeline:
         "alerts": all_alerts,
         "trend": trend_result
     }
-

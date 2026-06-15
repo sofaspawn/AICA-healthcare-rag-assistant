@@ -1,4 +1,4 @@
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from sentence_transformers import SentenceTransformer
 
 class EmbeddingModel:
     _instance = None
@@ -7,9 +7,7 @@ class EmbeddingModel:
     def get_instance(cls):
         if cls._instance is None:
             print("Loading local embedding model: sentence-transformers/all-MiniLM-L6-v2")
-            cls._instance = HuggingFaceEmbeddings(
-                model_name="sentence-transformers/all-MiniLM-L6-v2"
-            )
+            cls._instance = SentenceTransformer("all-MiniLM-L6-v2")
         return cls._instance
 
 def get_embedding_model():
