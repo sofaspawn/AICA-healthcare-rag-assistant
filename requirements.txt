@@ -13,3 +13,4 @@ groq
 tenacity
 opencv-python-headless
 sentence-transformers
+streamlit
