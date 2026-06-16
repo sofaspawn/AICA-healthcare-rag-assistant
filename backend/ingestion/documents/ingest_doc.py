@@ -5,6 +5,8 @@ from backend.ingestion.documents.docx_parser import extract_docx_text
 from backend.ingestion.documents.txt_parser import extract_txt_text
 from backend.rag.chunker import chunk_document
 
+from backend.ingestion.sanitization import sanitize_text
+
 def clean_text(text: str) -> str:
     """
     Cleans extracted text: replaces multiple whitespaces with single spaces,
@@ -24,7 +26,8 @@ def clean_text(text: str) -> str:
             cleaned_line = re.sub(r'\s+', ' ', stripped)
             cleaned_lines.append(cleaned_line)
             
-    return "\n".join(cleaned_lines)
+    cleaned_text = "\n".join(cleaned_lines)
+    return sanitize_text(cleaned_text)
 
 def ingest_document(file_path: str) -> dict:
     """

@@ -1,9 +1,13 @@
 import os
-from fastapi import APIRouter, HTTPException, UploadFile, File
+import asyncio
+from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
+from pydantic import BaseModel
 from backend.rag.chat import chat_pipeline
 from backend.database.db import DatabaseManager
+from backend.database.models import UploadRecord
 from backend.clinical.patient_state import get_patient_state
 from backend.rules.sos_rules import check_sos
+from backend.main import preprocess_and_update_state, log_interaction
 
 router = APIRouter()
 
@@ -23,19 +27,14 @@ async def save_upload_file(upload_file: UploadFile) -> str:
         buffer.write(content)
     return file_path
 
-from backend.main import preprocess_and_update_state, log_interaction
-from pydantic import BaseModel
-
 class ChatRequest(BaseModel):
     query: str
     patient_id: str = DEFAULT_PATIENT_ID
 
-@router.post("/upload/document")
-async def upload_clinical_document(patient_id: str | None = None, file: UploadFile = File(...)):
+# --- Background Task Handlers ---
+
+async def process_document_task(upload_id: str, pid: str, file_path: str, filename: str):
     try:
-        pid = resolve_patient_id(patient_id)
-        file_path = await save_upload_file(file)
-        
         from backend.ingestion.documents.ingest_doc import ingest_document
         doc_data = ingest_document(file_path)
         
@@ -44,29 +43,25 @@ async def upload_clinical_document(patient_id: str | None = None, file: UploadFi
             patient_id=pid,
             source_type="document",
             clinical_content=doc_data["cleaned_text"],
-            metadata={"source_file": file.filename}
+            metadata={"source_file": filename}
         )
         add_to_knowledge_base(record)
         
-        extracted_data = await preprocess_and_update_state(pid, doc_data["cleaned_text"][:8000], file.filename)
+        await preprocess_and_update_state(pid, doc_data["cleaned_text"][:8000], filename)
         
         if os.path.exists(file_path):
             os.remove(file_path)
             
-        return {"status": "success", "message": f"Successfully ingested document {file.filename}", "extracted_data": extracted_data}
+        DatabaseManager.update_upload_status(upload_id, "indexed")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        DatabaseManager.update_upload_status(upload_id, "failed", str(e))
 
-@router.post("/upload/prescription")
-async def upload_prescription(patient_id: str | None = None, file: UploadFile = File(...)):
+async def process_prescription_task(upload_id: str, pid: str, file_path: str, filename: str):
     try:
-        pid = resolve_patient_id(patient_id)
-        file_path = await save_upload_file(file)
-        
         from backend.ingestion.prescription_parser import parse_prescription_image
         meds = await parse_prescription_image(file_path, patient_id=pid)
         
-        meds_summary = f"Prescription uploaded: {file.filename}.\nMedications extracted:\n"
+        meds_summary = f"Prescription uploaded: {filename}.\nMedications extracted:\n"
         if meds:
             for m in meds:
                 meds_summary += f"- {m.get('medicine')} {m.get('dosage')} {m.get('frequency')}\n"
@@ -78,25 +73,20 @@ async def upload_prescription(patient_id: str | None = None, file: UploadFile = 
             patient_id=pid,
             source_type="prescription",
             clinical_content=meds_summary,
-            metadata={"source_file": file.filename}
+            metadata={"source_file": filename}
         )
         add_to_knowledge_base(record)
-        
-        log_interaction(pid, f"Uploaded prescription: {file.filename}", ["medication_update"], file.filename)
+        log_interaction(pid, f"Uploaded prescription: {filename}", ["medication_update"], filename)
         
         if os.path.exists(file_path):
             os.remove(file_path)
-        
-        return {"status": "success", "message": f"Prescription {file.filename} processed", "medications": meds}
+            
+        DatabaseManager.update_upload_status(upload_id, "indexed")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        DatabaseManager.update_upload_status(upload_id, "failed", str(e))
 
-@router.post("/upload/lab-report")
-async def upload_lab_report(patient_id: str | None = None, file: UploadFile = File(...)):
+async def process_lab_task(upload_id: str, pid: str, file_path: str, filename: str):
     try:
-        pid = resolve_patient_id(patient_id)
-        file_path = await save_upload_file(file)
-        
         from backend.ingestion.lab_parser import parse_lab_report
         lab_data = await parse_lab_report(file_path, patient_id=pid)
         
@@ -106,26 +96,22 @@ async def upload_lab_report(patient_id: str | None = None, file: UploadFile = Fi
                 patient_id=pid,
                 source_type="lab_report",
                 clinical_content=lab_data["interpretation"],
-                metadata={"source_file": file.filename}
+                metadata={"source_file": filename}
             )
             add_to_knowledge_base(record)
             
         symptoms = [val["test"] for val in lab_data["values"]]
-        log_interaction(pid, f"Uploaded lab report: {file.filename}", symptoms, file.filename)
+        log_interaction(pid, f"Uploaded lab report: {filename}", symptoms, filename)
         
         if os.path.exists(file_path):
             os.remove(file_path)
-        
-        return {"status": "success", "message": f"Lab report {file.filename} processed", "values": lab_data["values"], "interpretation": lab_data["interpretation"]}
+            
+        DatabaseManager.update_upload_status(upload_id, "indexed")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        DatabaseManager.update_upload_status(upload_id, "failed", str(e))
 
-@router.post("/upload/image")
-async def upload_medical_image(patient_id: str | None = None, image_type: str = "general", file: UploadFile = File(...)):
+async def process_image_task(upload_id: str, pid: str, file_path: str, filename: str, image_type: str):
     try:
-        pid = resolve_patient_id(patient_id)
-        file_path = await save_upload_file(file)
-        
         from backend.ingestion.image_parser import parse_medical_image
         image_data = await parse_medical_image(file_path, image_type=image_type, patient_id=pid)
         
@@ -134,25 +120,20 @@ async def upload_medical_image(patient_id: str | None = None, image_type: str = 
             patient_id=pid,
             source_type=image_type,
             clinical_content=image_data["observation"],
-            metadata={"source_file": file.filename, "image_path": file_path}
+            metadata={"source_file": filename, "image_path": file_path}
         )
         add_to_knowledge_base(record)
-        
-        log_interaction(pid, f"Analyzed {image_type} image: {file.filename}", ["imaging_finding"], file.filename)
+        log_interaction(pid, f"Analyzed {image_type} image: {filename}", ["imaging_finding"], filename)
         
         if os.path.exists(file_path):
             os.remove(file_path)
-        
-        return {"status": "success", "message": f"Medical image {file.filename} analyzed", "observation": image_data["observation"]}
+            
+        DatabaseManager.update_upload_status(upload_id, "indexed")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        DatabaseManager.update_upload_status(upload_id, "failed", str(e))
 
-@router.post("/upload/audio")
-async def upload_audio_recording(patient_id: str | None = None, source_type: str = "audio_dictation", file: UploadFile = File(...)):
+async def process_audio_task(upload_id: str, pid: str, file_path: str, filename: str, source_type: str):
     try:
-        pid = resolve_patient_id(patient_id)
-        file_path = await save_upload_file(file)
-        
         from backend.ingestion.audio_parser import parse_audio_recording
         audio_data = await parse_audio_recording(file_path, source_type=source_type, patient_id=pid)
         
@@ -162,7 +143,7 @@ async def upload_audio_recording(patient_id: str | None = None, source_type: str
                 patient_id=pid,
                 source_type=source_type,
                 clinical_content=f"Voice Recording Transcript ({source_type}):\n{audio_data['transcript']}",
-                metadata={"source_file": file.filename}
+                metadata={"source_file": filename}
             )
             add_to_knowledge_base(record)
             
@@ -172,21 +153,17 @@ async def upload_audio_recording(patient_id: str | None = None, source_type: str
             extracted = ExtractedClinicalData(symptoms=audio_data["symptoms"], vitals=ExtractedVitals(), medications=[])
             update_patient_state(pid, extracted)
             
-        log_interaction(pid, f"Voice dictation processed: {audio_data['transcript'][:100]}...", audio_data["symptoms"], file.filename)
+        log_interaction(pid, f"Voice dictation processed: {audio_data['transcript'][:100]}...", audio_data["symptoms"], filename)
         
         if os.path.exists(file_path):
             os.remove(file_path)
-        
-        return {"status": "success", "message": f"Audio file {file.filename} transcribed", "transcript": audio_data["transcript"], "symptoms": audio_data["symptoms"]}
+            
+        DatabaseManager.update_upload_status(upload_id, "indexed")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        DatabaseManager.update_upload_status(upload_id, "failed", str(e))
 
-@router.post("/upload/video")
-async def upload_video_recording(patient_id: str | None = None, file: UploadFile = File(...)):
+async def process_video_task(upload_id: str, pid: str, file_path: str, filename: str):
     try:
-        pid = resolve_patient_id(patient_id)
-        file_path = await save_upload_file(file)
-        
         from backend.ingestion.video_parser import parse_video_observations
         video_data = await parse_video_observations(file_path, patient_id=pid)
         
@@ -195,18 +172,112 @@ async def upload_video_recording(patient_id: str | None = None, file: UploadFile
             patient_id=pid,
             source_type="video_observations",
             clinical_content=f"Video Summary: {video_data['summary']}\n\nFrame observations:\n{video_data['observations']}",
-            metadata={"source_file": file.filename, "video_path": file_path}
+            metadata={"source_file": filename, "video_path": file_path}
         )
         add_to_knowledge_base(record)
-        
-        log_interaction(pid, f"Analyzed gait/movement video: {file.filename}", ["movement_finding"], file.filename)
+        log_interaction(pid, f"Analyzed gait/movement video: {filename}", ["movement_finding"], filename)
         
         if os.path.exists(file_path):
             os.remove(file_path)
-        
-        return {"status": "success", "message": f"Video file {file.filename} analyzed", "summary": video_data["summary"]}
+            
+        DatabaseManager.update_upload_status(upload_id, "indexed")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        DatabaseManager.update_upload_status(upload_id, "failed", str(e))
+
+# --- API Endpoints ---
+
+@router.post("/upload/document")
+async def upload_clinical_document(background_tasks: BackgroundTasks, patient_id: str | None = None, file: UploadFile = File(...)):
+    try:
+        pid = resolve_patient_id(patient_id)
+        file_path = await save_upload_file(file)
+        
+        record = UploadRecord(patient_id=pid, filename=file.filename, status="processing")
+        upload_id = DatabaseManager.insert_upload(record)
+        
+        background_tasks.add_task(process_document_task, upload_id, pid, file_path, file.filename)
+        return {"status": "success", "message": f"Upload started for document {file.filename}", "upload_id": upload_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+@router.post("/upload/prescription")
+async def upload_prescription(background_tasks: BackgroundTasks, patient_id: str | None = None, file: UploadFile = File(...)):
+    try:
+        pid = resolve_patient_id(patient_id)
+        file_path = await save_upload_file(file)
+        
+        record = UploadRecord(patient_id=pid, filename=file.filename, status="processing")
+        upload_id = DatabaseManager.insert_upload(record)
+        
+        background_tasks.add_task(process_prescription_task, upload_id, pid, file_path, file.filename)
+        return {"status": "success", "message": f"Upload started for prescription {file.filename}", "upload_id": upload_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+@router.post("/upload/lab-report")
+async def upload_lab_report(background_tasks: BackgroundTasks, patient_id: str | None = None, file: UploadFile = File(...)):
+    try:
+        pid = resolve_patient_id(patient_id)
+        file_path = await save_upload_file(file)
+        
+        record = UploadRecord(patient_id=pid, filename=file.filename, status="processing")
+        upload_id = DatabaseManager.insert_upload(record)
+        
+        background_tasks.add_task(process_lab_task, upload_id, pid, file_path, file.filename)
+        return {"status": "success", "message": f"Upload started for lab report {file.filename}", "upload_id": upload_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+@router.post("/upload/image")
+async def upload_medical_image(background_tasks: BackgroundTasks, patient_id: str | None = None, image_type: str = "general", file: UploadFile = File(...)):
+    try:
+        pid = resolve_patient_id(patient_id)
+        file_path = await save_upload_file(file)
+        
+        record = UploadRecord(patient_id=pid, filename=file.filename, status="processing")
+        upload_id = DatabaseManager.insert_upload(record)
+        
+        background_tasks.add_task(process_image_task, upload_id, pid, file_path, file.filename, image_type)
+        return {"status": "success", "message": f"Upload started for medical image {file.filename}", "upload_id": upload_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+@router.post("/upload/audio")
+async def upload_audio_recording(background_tasks: BackgroundTasks, patient_id: str | None = None, source_type: str = "audio_dictation", file: UploadFile = File(...)):
+    try:
+        pid = resolve_patient_id(patient_id)
+        file_path = await save_upload_file(file)
+        
+        record = UploadRecord(patient_id=pid, filename=file.filename, status="processing")
+        upload_id = DatabaseManager.insert_upload(record)
+        
+        background_tasks.add_task(process_audio_task, upload_id, pid, file_path, file.filename, source_type)
+        return {"status": "success", "message": f"Upload started for audio {file.filename}", "upload_id": upload_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+@router.post("/upload/video")
+async def upload_video_recording(background_tasks: BackgroundTasks, patient_id: str | None = None, file: UploadFile = File(...)):
+    try:
+        pid = resolve_patient_id(patient_id)
+        file_path = await save_upload_file(file)
+        
+        record = UploadRecord(patient_id=pid, filename=file.filename, status="processing")
+        upload_id = DatabaseManager.insert_upload(record)
+        
+        background_tasks.add_task(process_video_task, upload_id, pid, file_path, file.filename)
+        return {"status": "success", "message": f"Upload started for video {file.filename}", "upload_id": upload_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+@router.get("/patient/uploads")
+def get_patient_uploads(patient_id: str | None = None):
+    try:
+        pid = resolve_patient_id(patient_id)
+        uploads = DatabaseManager.get_uploads(pid)
+        return {"uploads": [u.dict() for u in uploads]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch uploads: {str(e)}")
 
 @router.post("/chat")
 async def chat(request: ChatRequest):

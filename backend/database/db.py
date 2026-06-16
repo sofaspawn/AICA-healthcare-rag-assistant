@@ -7,7 +7,7 @@ from datetime import datetime
 from supabase import create_client, Client
 from backend.database.models import (
     VitalsRecord, AlertRecord, PatientHistoryRecord,
-    MedicationRecord, LabResultRecord, ImageRecord, VideoRecord, RiskRecord
+    MedicationRecord, LabResultRecord, ImageRecord, VideoRecord, RiskRecord, UploadRecord
 )
 
 logger = logging.getLogger(__name__)
@@ -132,3 +132,34 @@ class DatabaseManager:
     def get_risk_history(patient_id: str, limit: int = 100) -> List[RiskRecord]:
         data = DatabaseManager._execute_select('risk_history', {'patient_id': patient_id}, 'timestamp', limit)
         return [RiskRecord.from_db(row) for row in reversed(data)]
+
+    @staticmethod
+    def insert_upload(record: UploadRecord) -> str:
+        data = record.model_dump(exclude={"id"}, exclude_none=True)
+        if not supabase:
+            logger.warning(f"Supabase not configured. Mocking insert to uploads: {data}")
+            return "mock-uuid"
+        response = supabase.table('uploads').insert(data).execute()
+        if response.data:
+            return response.data[0].get('id')
+        return None
+
+    @staticmethod
+    def get_uploads(patient_id: str) -> List[UploadRecord]:
+        data = DatabaseManager._execute_select('uploads', {'patient_id': patient_id}, 'created_at', None)
+        return [UploadRecord(**row) for row in reversed(data)]
+
+    @staticmethod
+    def update_upload_status(upload_id: str, status: str, error_message: str = None) -> None:
+        if not supabase:
+            logger.warning(f"Supabase not configured. Mocking update_upload_status for {upload_id}")
+            return
+        
+        data = {
+            "status": status,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        if error_message:
+            data["error_message"] = error_message
+            
+        supabase.table('uploads').update(data).eq('id', upload_id).execute()

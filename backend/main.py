@@ -10,7 +10,22 @@ from pathlib import Path
 _env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(dotenv_path=_env_path)
 
-app = FastAPI(title="Multimodal Clinical Intelligence Platform API")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("✅ Multimodal Clinical Intelligence Platform API starting up with Groq...")
+    yield
+    print("🛑 Shutting down Multimodal Clinical Intelligence Platform API...")
+    try:
+        from backend.groq.provider import get_llm_provider
+        provider = get_llm_provider()
+        if hasattr(provider, 'close'):
+            await provider.close()
+    except Exception as e:
+        print(f"Error closing provider: {e}")
+
+app = FastAPI(title="Multimodal Clinical Intelligence Platform API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,9 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-def on_startup():
-    print("✅ Multimodal Clinical Intelligence Platform API starting up with Groq...")
+# Replaced on_event("startup") with lifespan
 
 @app.get("/health")
 def health_check():

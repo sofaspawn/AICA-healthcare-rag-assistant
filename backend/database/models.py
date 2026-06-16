@@ -104,3 +104,11 @@ class RiskRecord(BaseModel):
                 d["reasons"] = []
         return cls(**d)
 
+class UploadRecord(BaseModel):
+    id: Optional[str] = None
+    patient_id: str
+    filename: str
+    status: str
+    error_message: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())

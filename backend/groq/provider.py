@@ -97,6 +97,11 @@ class GroqProvider(LLMProvider):
             logger.error(f"Groq streaming generation failed: {e}")
             raise e
 
+    async def close(self):
+        if self.client:
+            await self.client.close()
+            self.client = None
+
 # Singleton instance for easy importing
 _provider_instance = None
 

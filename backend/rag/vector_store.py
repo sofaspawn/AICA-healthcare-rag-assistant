@@ -1,7 +1,11 @@
 import logging
+import os
+from tenacity import retry, stop_after_attempt, wait_exponential
 from backend.rag.embeddings import get_embedding_model
 from backend.rag.chunker import chunk_document
 from backend.database.db import supabase
+
+VECTOR_TABLE_NAME = os.getenv("VECTOR_TABLE_NAME", "clinical_knowledge")
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +70,16 @@ class VectorStore:
         for start in range(0, len(records), BATCH_SIZE):
             end = min(start + BATCH_SIZE, len(records))
             batch = records[start:end]
-            try:
-                supabase.table("clinical_knowledge").insert(batch).execute()
-                logger.info(f"Inserted vector batch {start // BATCH_SIZE + 1}")
-            except Exception as e:
-                logger.error(f"Error inserting vector batch: {e}")
+            self._insert_with_retry(batch, start // BATCH_SIZE + 1)
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    def _insert_with_retry(self, batch, batch_num):
+        try:
+            supabase.table(VECTOR_TABLE_NAME).insert(batch).execute()
+            logger.info(f"Inserted vector batch {batch_num} into {VECTOR_TABLE_NAME}")
+        except Exception as e:
+            logger.error(f"Error inserting vector batch {batch_num} into {VECTOR_TABLE_NAME}: {e}")
+            raise e
 
     def similarity_search(self, query: str, patient_id: str, k: int = 4):
         if not supabase:
