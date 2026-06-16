@@ -1,6 +1,11 @@
 import streamlit as st
 import requests
 import os
+import sys
+from pathlib import Path
+
+# Ensure project root is on sys.path so 'backend' package imports work when running Streamlit
+sys.path.append(str(Path(__file__).parent.resolve()))
 
 # Configuration
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
@@ -73,3 +78,39 @@ if st.button("Send"):
             st.error(f"Chat error: {e}")
 
 st.caption("Run this app with `streamlit run streamlit_app.py`. Make sure the FastAPI backend is reachable at the URL defined in `BACKEND_URL`.")
+
+# Import backend modules (defer LLM/chat import to runtime to avoid import-time failures)
+from backend.rag.vector_store import get_vector_store
+from backend.rag.retriever import retrieve_context
+# from backend.rag.chat import generate_chat_response  # IMPORT DEFERRED
+from backend.rules.sos_rules import check_sos
+from backend.ingestion.download_dataset import download_and_export
+from backend.ingestion.preprocess import preprocess_data
+from PyPDF2 import PdfReader
+from backend.rag.chunker import chunk_document
+
+import importlib
+import asyncio
+
+def safe_generate_chat_response(query: str, context_str: str, patient_context: str = "") -> str:
+    """
+    Safely import and call the chat generation function. Supports async or sync implementations.
+    Returns an error message string if the provider is not available.
+    """
+    try:
+        chat_mod = importlib.import_module("backend.rag.chat")
+    except Exception as e:
+        return f"LLM provider module import failed: {str(e)}"
+
+    gen = getattr(chat_mod, "generate_chat_response", None)
+    if gen is None:
+        return "LLM provider does not expose 'generate_chat_response'"
+
+    try:
+        if asyncio.iscoroutinefunction(gen):
+            # Run async provider in a new event loop
+            return asyncio.run(gen(query, context_str, patient_context))
+        else:
+            return gen(query, context_str, patient_context)
+    except Exception as e:
+        return f"Error calling LLM provider: {str(e)}"

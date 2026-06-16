@@ -20,14 +20,21 @@ class LLMProvider(ABC):
 
 class GroqProvider(LLMProvider):
     def __init__(self):
-        api_key = os.getenv("GROQ_API_KEY", "")
-        if not api_key:
-            logger.warning("GROQ_API_KEY is missing. GroqProvider will fail on calls.")
-        self.client = AsyncGroq(api_key=api_key)
+        self.api_key = os.getenv("GROQ_API_KEY", "")
+        if not self.api_key:
+            logger.warning("GROQ_API_KEY is missing. GroqProvider will initialize lazily and fail on calls until provided.")
+        self.client = None
         self.default_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         
+    def _ensure_client(self):
+        if self.client is None:
+            if not self.api_key:
+                raise ValueError("GROQ_API_KEY environment variable is required but not set. Set it in your .env file or export it in the shell.")
+            self.client = AsyncGroq(api_key=self.api_key)
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def generate(self, prompt: str, system_prompt: str = None, **kwargs) -> Any:
+        self._ensure_client()
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -67,6 +74,7 @@ class GroqProvider(LLMProvider):
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def generate_stream(self, prompt: str, system_prompt: str = None, **kwargs) -> AsyncGenerator[str, None]:
+        self._ensure_client()
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})

@@ -5,3 +5,5 @@ __pycache__/
 db/
 .DS_Store
 backend/data/
+backend/db/
+healthcare_rag.db
