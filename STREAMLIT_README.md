@@ -90,7 +90,7 @@ backend/rag/ (Core RAG Logic)
   ├── retriever.py → Context retrieval
   ├── vector_store.py → ChromaDB persistence
   ├── embeddings.py → Sentence embeddings
-  ├── chunker.py → Document chunking
+  ├── .py →chunker Document chunking
 backend/ingestion/ (Data Loading)
   ├── download_dataset.py → HuggingFace data
   └── preprocess.py → Data normalization
