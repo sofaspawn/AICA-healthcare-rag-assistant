@@ -52,5 +52,86 @@ create table if not exists uploads (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+-- Create missing patient management tables
+
+create table if not exists vitals_history (
+  id bigint generated always as identity primary key,
+  patient_id text not null,
+  timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  spo2 double precision,
+  heart_rate double precision,
+  temperature double precision,
+  respiratory_rate double precision,
+  systolic_bp double precision,
+  diastolic_bp double precision
+);
+
+create table if not exists alerts (
+  id bigint generated always as identity primary key,
+  patient_id text not null,
+  timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  severity text not null,
+  score integer not null,
+  alerts jsonb default '[]'::jsonb not null
+);
+
+create table if not exists patient_history (
+  id bigint generated always as identity primary key,
+  patient_id text not null,
+  timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  interaction_text text not null,
+  extracted_symptoms jsonb default '[]'::jsonb not null,
+  risk_score integer not null,
+  severity text not null
+);
+
+create table if not exists medications (
+  id bigint generated always as identity primary key,
+  patient_id text not null,
+  timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  medicine text not null,
+  dosage text not null,
+  frequency text not null,
+  source_file text
+);
+
+create table if not exists lab_results (
+  id bigint generated always as identity primary key,
+  patient_id text not null,
+  timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  test text not null,
+  value double precision not null,
+  unit text not null,
+  reference_range text,
+  source_file text
+);
+
+create table if not exists medical_images (
+  id bigint generated always as identity primary key,
+  patient_id text not null,
+  timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  image_type text not null,
+  observation text not null,
+  image_path text not null
+);
+
+create table if not exists videos (
+  id bigint generated always as identity primary key,
+  patient_id text not null,
+  timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  video_path text not null,
+  summary text not null,
+  observations text not null
+);
+
+create table if not exists risk_history (
+  id bigint generated always as identity primary key,
+  patient_id text not null,
+  timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  risk_score integer not null,
+  reasons jsonb default '[]'::jsonb not null,
+  severity text not null
+);
+
 -- Force PostgREST to reload the schema cache so the new tables and functions are available via the API
 NOTIFY pgrst, 'reload schema';
