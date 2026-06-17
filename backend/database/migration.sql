@@ -133,5 +133,18 @@ create table if not exists risk_history (
   severity text not null
 );
 
+-- Disable Row-Level Security (RLS) for all tables to allow backend direct API access
+
+alter table vitals_history disable row level security;
+alter table alerts disable row level security;
+alter table patient_history disable row level security;
+alter table medications disable row level security;
+alter table lab_results disable row level security;
+alter table medical_images disable row level security;
+alter table videos disable row level security;
+alter table risk_history disable row level security;
+alter table uploads disable row level security;
+alter table clinical_knowledge disable row level security;
+
 -- Force PostgREST to reload the schema cache so the new tables and functions are available via the API
 NOTIFY pgrst, 'reload schema';
