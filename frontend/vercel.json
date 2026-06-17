@@ -1,8 +1,12 @@
 {
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://<RENDER_BACKEND_URL>/api/v1/$1"
+      "source": "/api/v1/:path*",
+      "destination": "https://aica-healthcare-rag-assistant.onrender.com/api/v1/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://aica-healthcare-rag-assistant.onrender.com/health"
     }
   ],
   "framework": "vite"
