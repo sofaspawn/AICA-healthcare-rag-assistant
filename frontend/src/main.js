@@ -1,4 +1,6 @@
 import './index.css';
+import { Chart, registerables } from 'chart.js';
+Chart.register(...registerables);
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 const DEFAULT_PATIENT = import.meta.env.VITE_DEFAULT_PATIENT_ID ?? 'patient_001';
 
