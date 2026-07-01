@@ -68,9 +68,20 @@
   </div>
 </div>
 
-<div class="minimal-card rounded-xl p-lg">
-<h3 class="font-label-md text-outline/60 uppercase tracking-widest mb-md">Recent Activity</h3>
-<div id="overview-activity" class="text-on-surface-variant font-body-md">Loading…</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-lg">
+  <div class="minimal-card rounded-xl p-lg lg:col-span-2">
+    <div class="flex items-center gap-sm mb-md">
+      <span class="material-symbols-outlined text-primary text-[20px]">auto_awesome</span>
+      <h3 class="font-label-md text-outline/60 uppercase tracking-widest">AI Clinical Summary</h3>
+    </div>
+    <div id="overview-summary" class="text-on-surface font-body-md leading-relaxed">
+      <span class="text-outline/50 animate-pulse">Generating clinical overview…</span>
+    </div>
+  </div>
+  <div class="minimal-card rounded-xl p-lg">
+    <h3 class="font-label-md text-outline/60 uppercase tracking-widest mb-md">Recent Activity</h3>
+    <div id="overview-activity" class="text-on-surface-variant font-body-md">Loading…</div>
+  </div>
 </div>
 </section>
 

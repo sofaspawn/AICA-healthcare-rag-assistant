@@ -96,6 +96,12 @@ function renderOverview(summary) {
         <p class="mt-sm"><strong>Latest vitals:</strong> ${esc(vitalsStr)}</p>
         <p class="mt-sm"><strong>Timeline events:</strong> ${summary.timeline_count}</p>
         <p class="mt-sm text-outline/60">Last updated: ${esc(updated)}</p>`;
+    const summaryEl = $('#overview-summary');
+    if (summaryEl && summary.clinical_summary) {
+        summaryEl.innerHTML = `<p class="text-on-surface leading-relaxed">${esc(summary.clinical_summary)}</p>
+            <p class="text-label-sm text-outline/50 italic mt-md flex items-center gap-xs">
+            <span class="material-symbols-outlined text-[14px]">info</span>AI-generated — clinician verification required.</p>`;
+    }
 }
 
 function appendChat(role, text) {

@@ -299,7 +299,7 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/patient/summary")
-def get_patient_summary(patient_id: str | None = None):
+async def get_patient_summary(patient_id: str | None = None):
     pid = resolve_patient_id(patient_id)
     state = get_patient_state(pid)
     risks = DatabaseManager.get_risk_history(pid, limit=1)
@@ -319,16 +319,49 @@ def get_patient_summary(patient_id: str | None = None):
     vitals = state.current_vitals
     last_updated = history[-1].timestamp if history else (latest_risk.timestamp if latest_risk else None)
 
+    meds = DatabaseManager.get_medications(pid)
+    labs = DatabaseManager.get_lab_results(pid)
+    
+    clinical_summary = "No clinical data available yet to generate a health overview."
+    
+    if vitals or meds or labs or history:
+        from backend.groq.provider import get_llm_provider
+        
+        vitals_str = f"SpO2: {vitals.spo2}%, HR: {vitals.heart_rate} bpm, Temp: {vitals.temperature}°F, BP: {vitals.systolic_bp}/{vitals.diastolic_bp} mmHg" if vitals else "None"
+        meds_str = ", ".join([m.medicine for m in meds]) if meds else "None"
+        labs_str = ", ".join([f"{l.test}: {l.value} {l.unit}" for l in labs]) if labs else "None"
+        symptoms_str = ", ".join(state.symptoms_history) if state.symptoms_history else "None"
+        risk_str = f"Risk Score: {latest_risk.risk_score}, Severity: {latest_risk.severity}" if latest_risk else "None"
+        
+        prompt = f"""You are a clinical reasoning assistant. Generate a concise (2-3 sentences), highly objective, and professional clinical summary of the patient's current health status based on the following patient data. Do not make diagnostic claims, do not use generalities, and do not add placeholders.
+        
+Patient ID: {pid}
+Risk Profile: {risk_str}
+Recent Vitals: {vitals_str}
+Extracted Symptoms: {symptoms_str}
+Medications: {meds_str}
+Recent Lab Results: {labs_str}
+
+Clinical Narrative Summary:"""
+        
+        try:
+            provider = get_llm_provider()
+            clinical_summary = await provider.generate(prompt)
+            clinical_summary = clinical_summary.strip()
+        except Exception as e:
+            clinical_summary = f"Unable to generate clinical overview: {str(e)}"
+
     return {
         "patient_id": pid,
         "severity": latest_risk.severity if latest_risk else "LOW",
         "risk_score": latest_risk.risk_score if latest_risk else 0,
         "vitals": vitals.dict() if vitals else None,
-        "medications_count": len(DatabaseManager.get_medications(pid)),
-        "labs_count": len(DatabaseManager.get_lab_results(pid)),
+        "medications_count": len(meds),
+        "labs_count": len(labs),
         "timeline_count": len(history),
         "priority_alerts": priority_alerts[:8],
         "last_updated": last_updated,
+        "clinical_summary": clinical_summary
     }
 
 @router.get("/patient/alerts")
