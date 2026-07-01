@@ -3,6 +3,8 @@ const API_URL = import.meta.env.VITE_API_URL ?? '';
 const DEFAULT_PATIENT = import.meta.env.VITE_DEFAULT_PATIENT_ID ?? 'patient_001';
 
 let patientId = new URLSearchParams(location.search).get('patient') || sessionStorage.getItem('patientId') || DEFAULT_PATIENT;
+let chartSpo2TempInstance = null;
+let chartHrBpInstance = null;
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -30,6 +32,7 @@ function showView(name) {
         a.classList.toggle('text-on-surface-variant/70', a.dataset.view !== name);
     });
     if (name === 'records') loadTimeline($('#records-timeline'));
+    if (name === 'overview') loadVitalsCharts();
 }
 
 function setLoading(on, text = 'Processing…') {
@@ -115,6 +118,136 @@ function appendChat(role, text) {
     stream.scrollTop = stream.scrollHeight;
 }
 
+async function loadVitalsCharts() {
+    try {
+        const { vitals } = await api(`/api/v1/patient/vitals?patient_id=${encodeURIComponent(patientId)}`);
+        
+        const reversedVitals = [...(vitals || [])].reverse();
+        const labels = reversedVitals.map(v => v.timestamp?.slice(5, 16).replace('T', ' ') ?? '');
+        const spo2Data = reversedVitals.map(v => v.spo2);
+        const tempData = reversedVitals.map(v => v.temperature);
+        const hrData = reversedVitals.map(v => v.heart_rate);
+        const systolicData = reversedVitals.map(v => v.systolic_bp);
+        const diastolicData = reversedVitals.map(v => v.diastolic_bp);
+
+        if (chartSpo2TempInstance) chartSpo2TempInstance.destroy();
+        if (chartHrBpInstance) chartHrBpInstance.destroy();
+
+        const ctx1 = $('#chart-spo2-temp');
+        if (ctx1) {
+            chartSpo2TempInstance = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'SpO₂ (%)',
+                            data: spo2Data,
+                            borderColor: '#aa312e',
+                            backgroundColor: 'rgba(170, 49, 46, 0.1)',
+                            yAxisID: 'ySpo2',
+                            tension: 0.3,
+                            spanGaps: true
+                        },
+                        {
+                            label: 'Temp (°F)',
+                            data: tempData,
+                            borderColor: '#546521',
+                            backgroundColor: 'rgba(84, 101, 33, 0.1)',
+                            yAxisID: 'yTemp',
+                            tension: 0.3,
+                            spanGaps: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        ySpo2: {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: 'SpO₂ (%)' },
+                            min: 80,
+                            max: 100
+                        },
+                        yTemp: {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: 'Temp (°F)' },
+                            min: 94,
+                            max: 106,
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        const ctx2 = $('#chart-hr-bp');
+        if (ctx2) {
+            chartHrBpInstance = new Chart(ctx2, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'Heart Rate (bpm)',
+                            data: hrData,
+                            borderColor: '#aa312e',
+                            backgroundColor: 'rgba(170, 49, 46, 0.1)',
+                            yAxisID: 'yHr',
+                            tension: 0.3,
+                            spanGaps: true
+                        },
+                        {
+                            label: 'Systolic BP (mmHg)',
+                            data: systolicData,
+                            borderColor: '#006961',
+                            backgroundColor: 'rgba(0, 105, 97, 0.1)',
+                            yAxisID: 'yBp',
+                            tension: 0.3,
+                            spanGaps: true
+                        },
+                        {
+                            label: 'Diastolic BP (mmHg)',
+                            data: diastolicData,
+                            borderColor: '#74d7cb',
+                            backgroundColor: 'rgba(116, 215, 203, 0.1)',
+                            yAxisID: 'yBp',
+                            tension: 0.3,
+                            spanGaps: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        yHr: {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: 'Heart Rate' },
+                            min: 40,
+                            max: 180
+                        },
+                        yBp: {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: 'BP (mmHg)' },
+                            min: 50,
+                            max: 200,
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+        }
+    } catch (e) {
+        console.error("Failed to load vitals charts:", e);
+    }
+}
+
 async function loadSummary() {
     try {
         const s = await api(`/api/v1/patient/summary?patient_id=${encodeURIComponent(patientId)}`);
@@ -124,6 +257,9 @@ async function loadSummary() {
         $('#patient-label').textContent = s.patient_id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
         const inp = $('#patient-id-input');
         if (inp && document.activeElement !== inp) inp.value = patientId;
+        if (!$('#view-overview').classList.contains('hidden')) {
+            loadVitalsCharts();
+        }
     } catch (e) {
         console.error(e);
         $('#patient-label').textContent = patientId;

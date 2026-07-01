@@ -7,6 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjwvc3ZnPg==" />
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600;6..72,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="font-body-md text-on-surface">
 
@@ -51,6 +52,23 @@
 <!-- OVERVIEW -->
 <section id="view-overview" class="view-section hidden">
 <div class="grid grid-cols-1 md:grid-cols-3 gap-md mb-xl" id="overview-cards"></div>
+
+<!-- Graphs Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-lg mb-xl">
+  <div class="minimal-card rounded-xl p-lg flex flex-col justify-between">
+    <h3 class="font-label-md text-outline/60 uppercase tracking-widest mb-md">Vitals: SpO₂ & Temperature</h3>
+    <div style="position: relative; height: 260px; width: 100%;">
+      <canvas id="chart-spo2-temp"></canvas>
+    </div>
+  </div>
+  <div class="minimal-card rounded-xl p-lg flex flex-col justify-between">
+    <h3 class="font-label-md text-outline/60 uppercase tracking-widest mb-md">Vitals: Heart Rate & Blood Pressure</h3>
+    <div style="position: relative; height: 260px; width: 100%;">
+      <canvas id="chart-hr-bp"></canvas>
+    </div>
+  </div>
+</div>
+
 <div class="minimal-card rounded-xl p-lg">
 <h3 class="font-label-md text-outline/60 uppercase tracking-widest mb-md">Recent Activity</h3>
 <div id="overview-activity" class="text-on-surface-variant font-body-md">Loading…</div>
