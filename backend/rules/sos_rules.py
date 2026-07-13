@@ -1,29 +1,14 @@
-import re
+import json
+import logging
 from typing import Union, List
+from backend.groq.provider import get_llm_provider
 
-SOS_SYMPTOMS = [
-    "chest pain",
-    "seizure",
-    "fainting",
-    "stroke",
-    "breathing difficulty",
-    "shortness of breath",
-    "severe bleeding",
-    "loss of consciousness",
-    "heart attack",
-    "cant breathe",
-    "can't breathe",
-    "passed out",
-    "unresponsive",
-    "severe chest pressure",
-    "sudden collapse",
-    "difficulty breathing",
-]
+logger = logging.getLogger(__name__)
 
-def check_sos(query: Union[str, List[str]]) -> dict:
+async def check_sos(query: Union[str, List[str]]) -> dict:
     """
     Checks if the user's query (or a list of symptoms) contains any critical emergency symptoms.
-    Uses rule-based word-boundary keyword matching.
+    Uses an LLM zero-shot classification via Groq.
 
     Args:
         query: Either a plain text string or a list of symptom strings from patient state.
@@ -31,23 +16,36 @@ def check_sos(query: Union[str, List[str]]) -> dict:
     Returns:
         dict with keys: is_sos, matched_rules, severity
     """
-    # Normalize: if a list is passed, join into one string
     if isinstance(query, list):
-        text = " ".join(query).lower()
+        text = " ".join(query)
     else:
-        text = query.lower()
+        text = query
 
-    matched_rules = []
-    for symptom in SOS_SYMPTOMS:
-        pattern = r'\b' + re.escape(symptom) + r'\b'
-        if re.search(pattern, text):
-            if symptom not in matched_rules:
-                matched_rules.append(symptom)
+    prompt = f"Text to evaluate:\n{text}\n\nDoes this text describe a life-threatening medical emergency or severe SOS situation (like stroke, heart attack, severe bleeding, sudden collapse)? Respond with ONLY a JSON object: {{\"is_sos\": boolean, \"matched_rules\": [list of strings]}}."
+    system_prompt = "You are a critical SOS detection assistant. Determine if the input describes an extreme emergency. Respond ONLY with valid JSON."
 
-    is_sos = len(matched_rules) > 0
+    try:
+        provider = get_llm_provider()
+        response_str = await provider.generate(
+            prompt,
+            system_prompt,
+            response_format={"type": "json_object"}
+        )
+        data = json.loads(response_str)
+        is_sos = bool(data.get("is_sos", False))
+        matched_rules = data.get("matched_rules", [])
+        if not isinstance(matched_rules, list):
+            matched_rules = []
 
-    return {
-        "is_sos": is_sos,
-        "matched_rules": matched_rules,
-        "severity": "CRITICAL" if is_sos else "LOW"
-    }
+        return {
+            "is_sos": is_sos,
+            "matched_rules": matched_rules,
+            "severity": "CRITICAL" if is_sos else "LOW"
+        }
+    except Exception as e:
+        logger.error(f"Groq SOS detection error: {e}")
+        return {
+            "is_sos": False,
+            "matched_rules": [],
+            "severity": "LOW"
+        }

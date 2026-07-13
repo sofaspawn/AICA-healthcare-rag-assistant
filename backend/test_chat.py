@@ -1,5 +1,6 @@
 import os
 import sys
+import asyncio
 from dotenv import load_dotenv
 
 # Ensure we can import from backend
@@ -14,7 +15,7 @@ load_dotenv()
 def print_separator():
     print("=" * 60)
 
-def main():
+async def main():
     print_separator()
     print("Healthcare RAG Assistant - CLI Mode")
     print("Type 'exit' or 'quit' to stop.")
@@ -29,7 +30,7 @@ def main():
             continue
             
         # Check SOS
-        sos_result = check_sos(query)
+        sos_result = await check_sos(query)
         if sos_result["is_sos"]:
             print("\n [EMERGENCY ALERT] ")
             print(f"Detected critical symptoms: {', '.join(sos_result['matched_rules'])}")
@@ -38,7 +39,7 @@ def main():
             
         print("\nRetrieving context and generating response...")
         try:
-            chat_result = chat_pipeline(query)
+            chat_result = await chat_pipeline(query)
             
             print("\nSystem Response:")
             print("-" * 40)
@@ -53,4 +54,4 @@ def main():
             print(f"Error: {str(e)}")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

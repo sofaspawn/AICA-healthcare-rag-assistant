@@ -42,6 +42,8 @@ PATIENT STRUCTURED DATA:
         system_prompt=system_prompt.format(context=context_string, patient_context=patient_context)
     )
 
+from backend.knowledge.graph import get_graph
+
 async def chat_pipeline(query: str, patient_id: str = "patient_001", uploaded_sources: list = None):
     # 1. Retrieve RAG Context
     retrieval_data = retrieve_context(query, patient_id=patient_id)
@@ -50,11 +52,26 @@ async def chat_pipeline(query: str, patient_id: str = "patient_001", uploaded_so
     # 2. Extract structured data
     extracted_data = await extract_clinical_data(query)
     
+    # 2.5 Dynamic Context Building via Graph
+    graph = get_graph()
+    if getattr(extracted_data, "entities", None) or getattr(extracted_data, "relationships", None):
+        graph.add_data(extracted_data.entities, extracted_data.relationships)
+        
+    seed_entities = []
+    if getattr(extracted_data, "entities", None):
+        seed_entities.extend(extracted_data.entities)
+    if getattr(extracted_data, "symptoms", None):
+        seed_entities.extend(extracted_data.symptoms)
+        
+    graph_context = graph.get_relevant_context(seed_entities)
+    if graph_context:
+        context_str += f"\n\n{graph_context}"
+    
     # 3. Update patient state
     state = update_patient_state(patient_id, extracted_data)
     
     # 4. Run emergency detection
-    emergency_result = EmergencyDetector.detect(query, state.symptoms_history)
+    emergency_result = await EmergencyDetector.detect(query, state.symptoms_history)
     
     # 5. Run trend analysis
     trend_result = TrendAnalyzer.analyze(state.vitals_history)

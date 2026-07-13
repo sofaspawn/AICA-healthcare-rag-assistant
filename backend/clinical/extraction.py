@@ -1,16 +1,16 @@
 import json
 import logging
-from backend.clinical.schemas import ExtractedClinicalData
+from backend.clinical.schemas import ExtractedClinicalData, GraphRelationship
 from backend.groq.provider import get_llm_provider
 
 logger = logging.getLogger(__name__)
 
 async def extract_clinical_data(text: str) -> ExtractedClinicalData:
     """
-    Extracts structured clinical data (symptoms, vitals, medications) from text using Groq.
+    Extracts structured clinical data (symptoms, vitals, medications, entities, relationships) from text using Groq.
     """
     prompt = f"Clinical text:\n{text}\n\n" \
-             f"Extract symptoms, vitals, and medications mentioned in the text.\n" \
+             f"Extract symptoms, vitals, medications, medical entities (conditions, body parts), and relationships.\n" \
              f"Output MUST be a valid JSON object matching the following structure:\n" \
              f"{{\n" \
              f"  \"symptoms\": [\"string\"],\n" \
@@ -22,12 +22,14 @@ async def extract_clinical_data(text: str) -> ExtractedClinicalData:
              f"    \"systolic_bp\": float or null,\n" \
              f"    \"diastolic_bp\": float or null\n" \
              f"  }},\n" \
-             f"  \"medications\": [\"string\"]\n" \
+             f"  \"medications\": [\"string\"],\n" \
+             f"  \"entities\": [\"string\"],\n" \
+             f"  \"relationships\": [{{\"source\": \"string\", \"target\": \"string\", \"relation\": \"string\"}}]\n" \
              f"}}\n\n" \
-             f"If a vitals field is not mentioned, set it to null. If symptoms or medications are not mentioned, return an empty list. " \
+             f"If a field is not mentioned, set it to null or an empty list. " \
              f"Do not include markdown formatting or explanation. Output raw JSON only."
              
-    system_prompt = "You are a clinical data extraction assistant. Extract symptoms, vitals, and medications from clinical text."
+    system_prompt = "You are a clinical data extraction assistant. Extract symptoms, vitals, medications, entities, and relationships from clinical text."
     
     try:
         provider = get_llm_provider()
@@ -47,6 +49,16 @@ async def extract_clinical_data(text: str) -> ExtractedClinicalData:
             data["vitals"].setdefault(key, None)
         data.setdefault("symptoms", [])
         data.setdefault("medications", [])
+        data.setdefault("entities", [])
+        data.setdefault("relationships", [])
+        
+        # Format relationships
+        rels = []
+        for r in data["relationships"]:
+            if isinstance(r, dict) and "source" in r and "target" in r and "relation" in r:
+                rels.append(GraphRelationship(**r))
+        data["relationships"] = rels
+
         return ExtractedClinicalData(**data)
     except Exception as e:
         logger.error(f"Groq clinical extraction error: {e}")

@@ -284,7 +284,7 @@ async def chat(request: ChatRequest):
     try:
         pid = resolve_patient_id(request.patient_id)
         chat_result = await chat_pipeline(request.query, patient_id=pid)
-        sos_result = check_sos(request.query)
+        sos_result = await check_sos(request.query)
 
         return {
             "response": chat_result["response"],

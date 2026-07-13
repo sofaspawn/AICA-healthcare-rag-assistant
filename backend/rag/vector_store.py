@@ -85,11 +85,8 @@ class VectorStore:
         if not supabase:
             return []
             
-        # Get query embedding
         query_emb = self.embeddings.encode_single(query)
         
-        # Perform similarity search via rpc if pgvector matching function is defined
-        # Assume a function match_clinical_knowledge exists in Supabase
         try:
             response = supabase.rpc("match_clinical_knowledge", {
                 "query_embedding": query_emb,
@@ -100,6 +97,28 @@ class VectorStore:
             return response.data
         except Exception as e:
             logger.error(f"Vector search failed: {e}")
+            return []
+
+    def hybrid_search(self, query: str, patient_id: str, k: int = 20):
+        if not supabase:
+            return []
+            
+        query_emb = self.embeddings.encode_single(query)
+        
+        try:
+            response = supabase.rpc("match_clinical_knowledge_hybrid", {
+                "query_embedding": query_emb,
+                "query_text": query,
+                "match_threshold": 0.5,
+                "match_count": k,
+                "p_patient_id": patient_id,
+                "full_text_weight": 1.0,
+                "semantic_weight": 1.0,
+                "rrf_k": 50
+            }).execute()
+            return response.data
+        except Exception as e:
+            logger.error(f"Hybrid search failed: {e}")
             return []
 
 vector_store_instance = None
